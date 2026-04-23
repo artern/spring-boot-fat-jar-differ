@@ -1,0 +1,6 @@
+rootProject.name = 'spring-boot-fat-jar-differ'
+
+include 'differ-core'
+include 'differ-cli'
+include 'patcher-runtime'
+include 'gradle-plugin'

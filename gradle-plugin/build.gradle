@@ -1,0 +1,77 @@
+plugins {
+    id 'java-gradle-plugin'
+    id 'maven-publish'
+}
+
+description = 'Gradle plugin for Spring Boot fat jar differ'
+
+def configurePomMetadata = { pom, publicationArtifactId ->
+    pom.name = publicationArtifactId == 'pluginMaven'
+            ? 'spring-boot-fat-jar-differ'
+            : 'spring-boot-fat-jar-differ plugin marker'
+    pom.description = project.description
+    pom.url = 'https://github.com/artern/spring-boot-fat-jar-differ'
+    pom.licenses {
+        license {
+            name = 'MIT License'
+            url = 'https://opensource.org/licenses/MIT'
+            distribution = 'repo'
+        }
+    }
+    pom.organization {
+        name = 'artern'
+        url = 'https://github.com/artern'
+    }
+    pom.developers {
+        developer {
+            id = 'artern'
+            name = 'artern'
+            url = 'https://github.com/artern'
+        }
+    }
+    pom.issueManagement {
+        system = 'GitHub Issues'
+        url = 'https://github.com/artern/spring-boot-fat-jar-differ/issues'
+    }
+    pom.scm {
+        url = 'https://github.com/artern/spring-boot-fat-jar-differ'
+        connection = 'scm:git:https://github.com/artern/spring-boot-fat-jar-differ.git'
+        developerConnection = 'scm:git:ssh://git@github.com/artern/spring-boot-fat-jar-differ.git'
+    }
+}
+
+dependencies {
+    implementation project(':differ-core')
+    testImplementation gradleTestKit()
+}
+
+tasks.named('processResources') {
+    dependsOn project(':patcher-runtime').tasks.named('fatJar')
+    from(project(':patcher-runtime').tasks.named('fatJar').flatMap { it.archiveFile }) {
+        into 'templates'
+        rename { 'spring-boot-fat-jar-patcher-template.jar' }
+    }
+}
+
+gradlePlugin {
+    plugins {
+        springBootFatJarDiffer {
+            id = 'io.github.artern.spring-boot-fat-jar-differ'
+            implementationClass = 'io.github.artern.fatjar.differ.gradle.SpringBootFatJarDifferPlugin'
+            displayName = 'Spring Boot Fat Jar Differ'
+            description = 'Generates executable patcher jars from Spring Boot fat jars.'
+        }
+    }
+}
+
+publishing {
+    publications.withType(MavenPublication).configureEach { publication ->
+        pom {
+            configurePomMetadata(delegate, publication.name)
+        }
+    }
+}
+
+tasks.named('publishToMavenLocal') {
+    dependsOn project(':differ-core').tasks.named('publishToMavenLocal')
+}

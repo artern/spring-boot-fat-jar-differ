@@ -1,0 +1,21 @@
+description = 'Executable patcher runtime template'
+
+dependencies {
+    implementation project(':differ-core')
+}
+
+tasks.named('jar') {
+    enabled = false
+}
+
+tasks.named('fatJar') {
+    archiveBaseName = 'spring-boot-fat-jar-patcher-template'
+    archiveVersion = ''
+    manifest {
+        attributes('Main-Class': 'io.github.artern.fatjar.differ.patcher.PatcherMain')
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn tasks.named('fatJar')
+}

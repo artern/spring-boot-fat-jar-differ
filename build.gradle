@@ -1,0 +1,120 @@
+plugins {
+    id 'base'
+    id 'com.diffplug.spotless' version '6.13.0' apply false
+}
+
+group = 'io.github.artern'
+version = '0.1.0-SNAPSHOT'
+
+ext {
+    javaVersion = JavaVersion.VERSION_1_8
+    junitVersion = '5.10.2'
+}
+
+subprojects {
+    apply plugin: 'java-library'
+    apply plugin: 'com.diffplug.spotless'
+
+    group = rootProject.group
+    version = rootProject.version
+
+    java {
+        sourceCompatibility = rootProject.ext.javaVersion
+        targetCompatibility = rootProject.ext.javaVersion
+        withJavadocJar()
+        withSourcesJar()
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        if (JavaVersion.current().isJava9Compatible()) {
+            options.release = 8
+        }
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        testImplementation platform("org.junit:junit-bom:${rootProject.ext.junitVersion}")
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+
+    tasks.withType(Jar).configureEach {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    }
+
+    spotless {
+        encoding = 'UTF-8'
+
+        format 'misc', {
+            target('**/*.md', '**/*.yml', '**/*.yaml', '**/*.properties', '**/*.json', '**/*.xml', '*.gradle', '.gitattributes', '.gitignore')
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+
+        java {
+            removeUnusedImports()
+            googleJavaFormat('1.7')
+            formatAnnotations()
+            importOrder('java', 'javax', 'jakarta', '', 'io.github.artern', '\\#')
+        }
+    }
+
+    tasks.named('check') {
+        dependsOn tasks.named('spotlessCheck')
+    }
+
+    tasks.named('compileJava') {
+        dependsOn tasks.named('spotlessJavaApply')
+    }
+
+    tasks.named('processResources') {
+        dependsOn tasks.named('spotlessMiscApply')
+    }
+}
+
+apply plugin: 'com.diffplug.spotless'
+
+spotless {
+    encoding = 'UTF-8'
+
+    format 'misc', {
+        target('README.md', 'README.zh-CN.md', 'REQUIREMENTS_AND_PLAN.md', '*.gradle', '.gitattributes', '.gitignore')
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
+
+configure([project(':differ-cli'), project(':patcher-runtime')]) {
+    tasks.register('fatJar', Jar) {
+        archiveClassifier = ''
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        manifest {
+            attributes('Implementation-Title': project.name)
+        }
+        from sourceSets.main.output
+        dependsOn configurations.runtimeClasspath
+        from {
+            configurations.runtimeClasspath.collect { dependency ->
+                dependency.isDirectory() ? dependency : zipTree(dependency)
+            }
+        }
+    }
+}
+
+tasks.register('assembleBinaries') {
+    dependsOn ':differ-cli:fatJar'
+    dependsOn ':patcher-runtime:fatJar'
+}
+
+tasks.register('publishToolingToMavenLocal') {
+    dependsOn ':differ-core:publishToMavenLocal'
+    dependsOn ':differ-cli:publishToMavenLocal'
+    dependsOn ':gradle-plugin:publishToMavenLocal'
+}

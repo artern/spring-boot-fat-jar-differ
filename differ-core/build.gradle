@@ -1,0 +1,46 @@
+plugins {
+    id 'maven-publish'
+}
+
+description = 'Differ core library'
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = 'differ-core'
+            pom {
+                name = 'spring-boot-fat-jar-differ core'
+                description = project.description
+                url = 'https://github.com/artern/spring-boot-fat-jar-differ'
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                        distribution = 'repo'
+                    }
+                }
+                organization {
+                    name = 'artern'
+                    url = 'https://github.com/artern'
+                }
+                developers {
+                    developer {
+                        id = 'artern'
+                        name = 'artern'
+                        url = 'https://github.com/artern'
+                    }
+                }
+                issueManagement {
+                    system = 'GitHub Issues'
+                    url = 'https://github.com/artern/spring-boot-fat-jar-differ/issues'
+                }
+                scm {
+                    url = 'https://github.com/artern/spring-boot-fat-jar-differ'
+                    connection = 'scm:git:https://github.com/artern/spring-boot-fat-jar-differ.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/artern/spring-boot-fat-jar-differ.git'
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,76 @@
+plugins {
+    id 'maven-publish'
+}
+
+description = 'Differ CLI application'
+
+dependencies {
+    implementation project(':differ-core')
+}
+
+tasks.named('processResources') {
+    dependsOn project(':patcher-runtime').tasks.named('fatJar')
+    from(project(':patcher-runtime').tasks.named('fatJar').flatMap { it.archiveFile }) {
+        into 'templates'
+        rename { 'spring-boot-fat-jar-patcher-template.jar' }
+    }
+}
+
+tasks.named('jar') {
+    enabled = false
+}
+
+tasks.named('fatJar') {
+    archiveBaseName = 'spring-boot-fat-jar-differ'
+    archiveVersion = ''
+    manifest {
+        attributes('Main-Class': 'io.github.artern.fatjar.differ.cli.DifferMain')
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn tasks.named('fatJar')
+}
+
+publishing {
+    publications {
+        fatJarMaven(MavenPublication) {
+            artifactId = 'differ-cli'
+            artifact tasks.named('fatJar')
+            artifact tasks.named('sourcesJar')
+            artifact tasks.named('javadocJar')
+            pom {
+                name = 'spring-boot-fat-jar-differ cli'
+                description = project.description
+                url = 'https://github.com/artern/spring-boot-fat-jar-differ'
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                        distribution = 'repo'
+                    }
+                }
+                organization {
+                    name = 'artern'
+                    url = 'https://github.com/artern'
+                }
+                developers {
+                    developer {
+                        id = 'artern'
+                        name = 'artern'
+                        url = 'https://github.com/artern'
+                    }
+                }
+                issueManagement {
+                    system = 'GitHub Issues'
+                    url = 'https://github.com/artern/spring-boot-fat-jar-differ/issues'
+                }
+                scm {
+                    url = 'https://github.com/artern/spring-boot-fat-jar-differ'
+                    connection = 'scm:git:https://github.com/artern/spring-boot-fat-jar-differ.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/artern/spring-boot-fat-jar-differ.git'
+                }
+            }
+        }
+    }
+}
