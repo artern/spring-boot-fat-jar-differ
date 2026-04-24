@@ -60,7 +60,7 @@ public final class ZipEntries {
       ZipFile zipFile, ZipEntry zipEntry, ZipOutputStream zipOutputStream, String targetName)
       throws IOException {
     if (zipEntry.isDirectory()) {
-      writeDirectory(zipOutputStream, targetName);
+      writeDirectory(zipOutputStream, zipEntry, targetName);
       return;
     }
     try (InputStream inputStream = zipFile.getInputStream(zipEntry)) {
@@ -72,7 +72,7 @@ public final class ZipEntries {
       ZipInputStream zipInputStream, ZipEntry zipEntry, ZipOutputStream zipOutputStream)
       throws IOException {
     if (zipEntry.isDirectory()) {
-      writeDirectory(zipOutputStream, zipEntry.getName());
+      writeDirectory(zipOutputStream, zipEntry, zipEntry.getName());
       return;
     }
     writeStream(zipOutputStream, copyMetadata(zipEntry, zipEntry.getName()), zipInputStream);
@@ -90,6 +90,12 @@ public final class ZipEntries {
     String normalized = entryName.endsWith("/") ? entryName : entryName + "/";
     ZipEntry zipEntry = new ZipEntry(normalized);
     zipOutputStream.putNextEntry(zipEntry);
+    zipOutputStream.closeEntry();
+  }
+
+  static void writeDirectory(
+      ZipOutputStream zipOutputStream, ZipEntry sourceEntry, String entryName) throws IOException {
+    zipOutputStream.putNextEntry(copyMetadata(sourceEntry, entryName));
     zipOutputStream.closeEntry();
   }
 

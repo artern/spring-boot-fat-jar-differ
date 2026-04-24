@@ -104,6 +104,44 @@ class PatchApplierTest {
     assertEquals(expected.getAllEntries().keySet(), actual.getAllEntries().keySet());
   }
 
+  @Test
+  void preservesExplicitDirectoryMetadataInsideLogicalTrees() throws Exception {
+    Path baselineJar = tempDir.resolve("baseline-dir.jar");
+    Path targetJar = tempDir.resolve("target-dir.jar");
+    Path templateJar = tempDir.resolve("template.jar");
+    Path patchBundle = tempDir.resolve("spring-boot-fat-jar-patcher.jar");
+    Path outputJar = tempDir.resolve("output-dir.jar");
+
+    writeArchive(
+        baselineJar,
+        classTreeEntries("old-app"),
+        null,
+        Collections.singleton("BOOT-INF/classes/com/"));
+    writeArchive(
+        targetJar,
+        classTreeEntries("new-app"),
+        null,
+        Collections.singleton("BOOT-INF/classes/com/"));
+    writeTemplateJar(templateJar);
+
+    ExecutablePatchJarBuilder builder = new ExecutablePatchJarBuilder();
+    try (InputStream templateStream = Files.newInputStream(templateJar)) {
+      builder.build(baselineJar, targetJar, templateStream, patchBundle, "test-version");
+    }
+
+    new PatchApplier().apply(baselineJar, patchBundle, outputJar);
+
+    assertStored(outputJar, "BOOT-INF/classes/com/");
+
+    SpringBootFatJarScanner scanner = new SpringBootFatJarScanner();
+    JarSnapshot actual = scanner.scan(outputJar);
+    JarSnapshot expected = scanner.scan(targetJar);
+    assertEquals(expected.getAllEntries().keySet(), actual.getAllEntries().keySet());
+    assertEquals(
+        expected.getAllEntries().get("BOOT-INF/classes/com/").getMethod(),
+        actual.getAllEntries().get("BOOT-INF/classes/com/").getMethod());
+  }
+
   private Map<String, String> baselineEntries() {
     Map<String, String> entries = new LinkedHashMap<String, String>();
     entries.put("META-INF/", null);
@@ -127,6 +165,18 @@ class PatchApplierTest {
     entries.put("BOOT-INF/lib/dependency.jar", "dep-new");
     entries.put("application.properties", "mode=new\n");
     entries.put("added.txt", "add-me\n");
+    return entries;
+  }
+
+  private Map<String, String> classTreeEntries(String appContent) {
+    Map<String, String> entries = new LinkedHashMap<String, String>();
+    entries.put("META-INF/", null);
+    entries.put("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nMain-Class: sample.App\n");
+    entries.put("BOOT-INF/", null);
+    entries.put("BOOT-INF/classes/", null);
+    entries.put("BOOT-INF/classes/com/", null);
+    entries.put("BOOT-INF/classes/com/example/", null);
+    entries.put("BOOT-INF/classes/com/example/App.class", appContent);
     return entries;
   }
 
