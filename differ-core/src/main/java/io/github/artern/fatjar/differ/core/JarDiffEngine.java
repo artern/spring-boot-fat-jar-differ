@@ -34,10 +34,7 @@ public final class JarDiffEngine {
     manifest.setToolVersion(toolVersion);
     manifest.setCreatedAt(Instant.now().toString());
     manifest.setBaselineFileName(baselineJar.getFileName().toString());
-    manifest.setBaselineSha256(HashingSupport.sha256Hex(baselineJar));
     manifest.setTargetFileName(targetJar.getFileName().toString());
-    manifest.setTargetSha256(HashingSupport.sha256Hex(targetJar));
-    manifest.setTargetArchivePreambleSha256(targetSnapshot.getArchivePreamble().getSha256());
     manifest.setTargetArchivePreambleSize(targetSnapshot.getArchivePreamble().getSize());
 
     List<PatchOperation> operations = manifest.getOperations();
@@ -46,9 +43,7 @@ public final class JarDiffEngine {
     for (LogicalArea logicalArea : LogicalArea.values()) {
       LogicalUnitSnapshot baselineUnit = baselineSnapshot.getLogicalUnit(logicalArea);
       LogicalUnitSnapshot targetUnit = targetSnapshot.getLogicalUnit(logicalArea);
-      manifest.getLogicalUnitCrcSums().put(logicalArea.getId(), targetUnit.getCrcSumHex());
-      manifest.getLogicalUnitFingerprints().put(logicalArea.getId(), targetUnit.getFingerprint());
-      if (!baselineUnit.getFingerprint().equals(targetUnit.getFingerprint())) {
+      if (!baselineUnit.structurallyEquals(targetUnit)) {
         PatchOperation.Type type =
             targetUnit.isEmpty()
                 ? PatchOperation.Type.DELETE_TREE
@@ -79,15 +74,23 @@ public final class JarDiffEngine {
       }
     }
 
-    long crcSum = 0L;
-    for (JarEntrySnapshot targetEntry : targetSnapshot.getAllEntries().values()) {
-      manifest.getTargetEntries().add(targetEntry);
-      crcSum += targetEntry.getCrc32();
-    }
+    manifest.getBaselineEntries().addAll(baselineSnapshot.getAllEntries().values());
+    manifest.setBaselineEntryCount(manifest.getBaselineEntries().size());
+    manifest.setBaselineEntryCrcSumHex(crcSumHex(baselineSnapshot.getAllEntries().values()));
+
+    manifest.getTargetEntries().addAll(targetSnapshot.getAllEntries().values());
     manifest.setTargetEntryCount(manifest.getTargetEntries().size());
-    manifest.setTargetEntryCrcSumHex(Long.toUnsignedString(crcSum, 16));
+    manifest.setTargetEntryCrcSumHex(crcSumHex(targetSnapshot.getAllEntries().values()));
 
     return new JarDiffPlan(baselineSnapshot, targetSnapshot, manifest);
+  }
+
+  private String crcSumHex(Iterable<JarEntrySnapshot> entries) {
+    long crcSum = 0L;
+    for (JarEntrySnapshot entry : entries) {
+      crcSum += entry.getCrc32();
+    }
+    return Long.toUnsignedString(crcSum, 16);
   }
 
   /** Returns a compact human-readable summary for CLI and build logs. */

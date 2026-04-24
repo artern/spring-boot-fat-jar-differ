@@ -61,15 +61,15 @@ public final class PatchApplier {
               patchManifest.getBaselineFileName(),
               patchManifest.getTargetFileName(),
               patchManifest.getOperations().size()));
-      log("Validating current archive against baseline SHA-256...");
+      log("Validating current archive against baseline entry metadata...");
       targetJarValidator.validateBaseline(currentJar, patchManifest);
       log("Baseline validation passed.");
       Files.deleteIfExists(outputJar);
+      byte[] preamble = readArchivePreamble(patchZip, patchManifest);
       try (ZipFile currentZip = new ZipFile(currentJar.toFile());
           OutputStream outputStream = Files.newOutputStream(outputJar)) {
         // Launch scripts are not part of the zip payload, so they must be
         // restored before the new zip content is streamed out.
-        byte[] preamble = readArchivePreamble(patchZip, patchManifest);
         log("Restoring archive preamble: " + preamble.length + " byte(s)");
         outputStream.write(preamble);
         ZipOutputStream outputZip = new ZipOutputStream(outputStream);
@@ -82,7 +82,7 @@ public final class PatchApplier {
         outputZip.close();
       }
       log("Validating reconstructed archive against target metadata...");
-      targetJarValidator.validateTarget(outputJar, patchManifest);
+      targetJarValidator.validateTarget(outputJar, patchManifest, preamble);
       log("Target validation passed.");
       return patchManifest;
     }

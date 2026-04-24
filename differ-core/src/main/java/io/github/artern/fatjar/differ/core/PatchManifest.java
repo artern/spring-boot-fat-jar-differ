@@ -1,30 +1,25 @@
 package io.github.artern.fatjar.differ.core;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * Serializable description of the patch content, expected target archive, and validation
- * fingerprints.
+ * Serializable description of the patch content, expected target archive, and validation metadata.
  */
 public final class PatchManifest {
 
-  private String formatVersion = "1";
+  private String formatVersion = "2";
   private String toolVersion;
   private String createdAt;
   private String baselineFileName;
-  private String baselineSha256;
+  private String baselineEntryCrcSumHex;
+  private int baselineEntryCount;
   private String targetFileName;
-  private String targetSha256;
-  private String targetArchivePreambleSha256;
   private int targetArchivePreambleSize;
   private String targetEntryCrcSumHex;
   private int targetEntryCount;
-  private final Map<String, String> logicalUnitCrcSums = new LinkedHashMap<String, String>();
-  private final Map<String, String> logicalUnitFingerprints = new LinkedHashMap<String, String>();
   private final List<PatchOperation> operations = new ArrayList<PatchOperation>();
+  private final List<JarEntrySnapshot> baselineEntries = new ArrayList<JarEntrySnapshot>();
   private final List<JarEntrySnapshot> targetEntries = new ArrayList<JarEntrySnapshot>();
 
   public String getFormatVersion() {
@@ -59,12 +54,20 @@ public final class PatchManifest {
     this.baselineFileName = baselineFileName;
   }
 
-  public String getBaselineSha256() {
-    return baselineSha256;
+  public String getBaselineEntryCrcSumHex() {
+    return baselineEntryCrcSumHex;
   }
 
-  public void setBaselineSha256(String baselineSha256) {
-    this.baselineSha256 = baselineSha256;
+  public void setBaselineEntryCrcSumHex(String baselineEntryCrcSumHex) {
+    this.baselineEntryCrcSumHex = baselineEntryCrcSumHex;
+  }
+
+  public int getBaselineEntryCount() {
+    return baselineEntryCount;
+  }
+
+  public void setBaselineEntryCount(int baselineEntryCount) {
+    this.baselineEntryCount = baselineEntryCount;
   }
 
   public String getTargetFileName() {
@@ -73,22 +76,6 @@ public final class PatchManifest {
 
   public void setTargetFileName(String targetFileName) {
     this.targetFileName = targetFileName;
-  }
-
-  public String getTargetSha256() {
-    return targetSha256;
-  }
-
-  public void setTargetSha256(String targetSha256) {
-    this.targetSha256 = targetSha256;
-  }
-
-  public String getTargetArchivePreambleSha256() {
-    return targetArchivePreambleSha256;
-  }
-
-  public void setTargetArchivePreambleSha256(String targetArchivePreambleSha256) {
-    this.targetArchivePreambleSha256 = targetArchivePreambleSha256;
   }
 
   public int getTargetArchivePreambleSize() {
@@ -115,16 +102,12 @@ public final class PatchManifest {
     this.targetEntryCount = targetEntryCount;
   }
 
-  public Map<String, String> getLogicalUnitCrcSums() {
-    return logicalUnitCrcSums;
-  }
-
-  public Map<String, String> getLogicalUnitFingerprints() {
-    return logicalUnitFingerprints;
-  }
-
   public List<PatchOperation> getOperations() {
     return operations;
+  }
+
+  public List<JarEntrySnapshot> getBaselineEntries() {
+    return baselineEntries;
   }
 
   public List<JarEntrySnapshot> getTargetEntries() {

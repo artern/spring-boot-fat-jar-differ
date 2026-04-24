@@ -1,6 +1,7 @@
 package io.github.artern.fatjar.differ.core;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -50,8 +51,7 @@ public final class JarDiffReportFormatter {
   private void appendPreambleLine(JarDiffPlan plan, List<String> lines) {
     ArchivePreamble baseline = plan.getBaselineSnapshot().getArchivePreamble();
     ArchivePreamble target = plan.getTargetSnapshot().getArchivePreamble();
-    if (!baseline.getSha256().equals(target.getSha256())
-        || baseline.getSize() != target.getSize()) {
+    if (!Arrays.equals(baseline.getBytes(), target.getBytes())) {
       lines.add(
           String.format(
               "  [REPLACE_PREAMBLE] archive-preamble (size %d -> %d)",

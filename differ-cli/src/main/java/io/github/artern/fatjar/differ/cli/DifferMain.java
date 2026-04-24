@@ -55,7 +55,6 @@ public final class DifferMain {
     for (String line : reportFormatter.format(plan)) {
       System.out.println(line);
     }
-    System.out.println("Target SHA-256: " + plan.getPatchManifest().getTargetSha256());
   }
 
   private static void requireFile(Path file, String description) {

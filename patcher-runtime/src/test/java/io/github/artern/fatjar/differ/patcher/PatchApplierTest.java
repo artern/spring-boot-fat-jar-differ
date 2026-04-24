@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,11 +22,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import io.github.artern.fatjar.differ.core.ExecutablePatchJarBuilder;
+import io.github.artern.fatjar.differ.core.JarEntrySnapshot;
 import io.github.artern.fatjar.differ.core.JarSnapshot;
+import io.github.artern.fatjar.differ.core.PatchMetadataIO;
 import io.github.artern.fatjar.differ.core.SpringBootFatJarScanner;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PatchApplierTest {
 
@@ -66,8 +72,9 @@ class PatchApplierTest {
     assertStored(outputJar, "BOOT-INF/lib/dependency.jar");
     assertContains(progressMessages, "Baseline validation passed.");
     assertContains(progressMessages, "[REPLACE_ENTRY] BOOT-INF/lib/dependency.jar (method=STORED)");
-    assertEquals(
-        expected.getArchivePreamble().getSha256(), actual.getArchivePreamble().getSha256());
+    assertSnapshotEntriesMatch(expected, actual);
+    assertArrayEquals(
+        expected.getArchivePreamble().getBytes(), actual.getArchivePreamble().getBytes());
   }
 
   @Test
@@ -92,16 +99,9 @@ class PatchApplierTest {
     SpringBootFatJarScanner scanner = new SpringBootFatJarScanner();
     JarSnapshot actual = scanner.scan(outputWar);
     JarSnapshot expected = scanner.scan(targetWar);
-    assertEquals(
-        expected.getArchivePreamble().getSha256(), actual.getArchivePreamble().getSha256());
-    assertEquals(
-        expected
-            .getLogicalUnit(io.github.artern.fatjar.differ.core.LogicalArea.WEB_INF_CLASSES)
-            .getFingerprint(),
-        actual
-            .getLogicalUnit(io.github.artern.fatjar.differ.core.LogicalArea.WEB_INF_CLASSES)
-            .getFingerprint());
-    assertEquals(expected.getAllEntries().keySet(), actual.getAllEntries().keySet());
+    assertSnapshotEntriesMatch(expected, actual);
+    assertArrayEquals(
+        expected.getArchivePreamble().getBytes(), actual.getArchivePreamble().getBytes());
   }
 
   @Test
@@ -136,10 +136,74 @@ class PatchApplierTest {
     SpringBootFatJarScanner scanner = new SpringBootFatJarScanner();
     JarSnapshot actual = scanner.scan(outputJar);
     JarSnapshot expected = scanner.scan(targetJar);
-    assertEquals(expected.getAllEntries().keySet(), actual.getAllEntries().keySet());
+    assertSnapshotEntriesMatch(expected, actual);
     assertEquals(
         expected.getAllEntries().get("BOOT-INF/classes/com/").getMethod(),
         actual.getAllEntries().get("BOOT-INF/classes/com/").getMethod());
+  }
+
+  @Test
+  void appliesPatchBundleAgainstStructurallyEquivalentCurrentJar() throws Exception {
+    Path baselineJar = tempDir.resolve("baseline-structural.jar");
+    Path currentJar = tempDir.resolve("current-structural.jar");
+    Path targetJar = tempDir.resolve("target-structural.jar");
+    Path templateJar = tempDir.resolve("template.jar");
+    Path patchBundle = tempDir.resolve("spring-boot-fat-jar-patcher.jar");
+    Path outputJar = tempDir.resolve("output-structural.jar");
+
+    writeJar(baselineJar, baselineEntries());
+    writeArchiveWithMetadata(
+        currentJar,
+        baselineEntries(),
+        null,
+        Collections.singleton("BOOT-INF/lib/dependency.jar"),
+        1_700_000_000_000L,
+        true);
+    writeJar(targetJar, targetEntries());
+    writeTemplateJar(templateJar);
+
+    ExecutablePatchJarBuilder builder = new ExecutablePatchJarBuilder();
+    try (InputStream templateStream = Files.newInputStream(templateJar)) {
+      builder.build(baselineJar, targetJar, templateStream, patchBundle, "test-version");
+    }
+
+    new PatchApplier().apply(currentJar, patchBundle, outputJar);
+
+    SpringBootFatJarScanner scanner = new SpringBootFatJarScanner();
+    JarSnapshot actual = scanner.scan(outputJar);
+    JarSnapshot expected = scanner.scan(targetJar);
+    assertSnapshotEntriesMatch(expected, actual);
+  }
+
+  @Test
+  void rejectsLegacyPatchBundleWithoutBaselineEntriesMetadata() throws Exception {
+    Path baselineJar = tempDir.resolve("baseline-legacy.jar");
+    Path targetJar = tempDir.resolve("target-legacy.jar");
+    Path templateJar = tempDir.resolve("template.jar");
+    Path patchBundle = tempDir.resolve("spring-boot-fat-jar-patcher.jar");
+    Path legacyPatchBundle = tempDir.resolve("spring-boot-fat-jar-patcher-legacy.jar");
+    Path outputJar = tempDir.resolve("output-legacy.jar");
+
+    writeJar(baselineJar, baselineEntries());
+    writeJar(targetJar, targetEntries());
+    writeTemplateJar(templateJar);
+
+    ExecutablePatchJarBuilder builder = new ExecutablePatchJarBuilder();
+    try (InputStream templateStream = Files.newInputStream(templateJar)) {
+      builder.build(baselineJar, targetJar, templateStream, patchBundle, "test-version");
+    }
+
+    downgradeToLegacyPatchBundle(patchBundle, legacyPatchBundle);
+
+    IOException exception =
+        assertThrows(
+            IOException.class,
+            () -> new PatchApplier().apply(baselineJar, legacyPatchBundle, outputJar));
+    assertTrue(
+        exception
+            .getMessage()
+            .contains(
+                "Unsupported patch format version: 1. Regenerate the patcher with the current toolchain."));
   }
 
   private Map<String, String> baselineEntries() {
@@ -204,18 +268,37 @@ class PatchApplierTest {
   private void writeArchive(
       Path jarFile, Map<String, String> entries, String preamble, Set<String> storedEntries)
       throws IOException {
+    writeArchiveWithMetadata(jarFile, entries, preamble, storedEntries, -1L, false);
+  }
+
+  private void writeArchiveWithMetadata(
+      Path jarFile,
+      Map<String, String> entries,
+      String preamble,
+      Set<String> storedEntries,
+      long entryTime,
+      boolean reverseOrder)
+      throws IOException {
     if (preamble != null) {
       Files.write(jarFile, preamble.getBytes(StandardCharsets.UTF_8));
+    }
+    List<Map.Entry<String, String>> orderedEntries =
+        new ArrayList<Map.Entry<String, String>>(entries.entrySet());
+    if (reverseOrder) {
+      Collections.reverse(orderedEntries);
     }
     try (ZipOutputStream outputStream =
         new ZipOutputStream(
             Files.newOutputStream(jarFile, StandardOpenOption.CREATE, StandardOpenOption.APPEND))) {
-      for (Map.Entry<String, String> entry : entries.entrySet()) {
+      for (Map.Entry<String, String> entry : orderedEntries) {
         byte[] bytes =
             entry.getValue() == null
                 ? new byte[0]
                 : entry.getValue().getBytes(StandardCharsets.UTF_8);
         ZipEntry zipEntry = new ZipEntry(entry.getKey());
+        if (entryTime >= 0) {
+          zipEntry.setTime(entryTime++);
+        }
         if (storedEntries.contains(entry.getKey())) {
           CRC32 crc32 = new CRC32();
           crc32.update(bytes);
@@ -241,6 +324,18 @@ class PatchApplierTest {
     }
   }
 
+  private void assertSnapshotEntriesMatch(JarSnapshot expected, JarSnapshot actual) {
+    assertEquals(expected.getAllEntries().size(), actual.getAllEntries().size());
+    assertEquals(expected.getAllEntries().keySet(), actual.getAllEntries().keySet());
+    for (Map.Entry<String, JarEntrySnapshot> entry : expected.getAllEntries().entrySet()) {
+      JarEntrySnapshot actualEntry = actual.getAllEntries().get(entry.getKey());
+      assertEquals(entry.getValue().getCrc32(), actualEntry.getCrc32());
+      assertEquals(entry.getValue().getSize(), actualEntry.getSize());
+      assertEquals(entry.getValue().getMethod(), actualEntry.getMethod());
+      assertEquals(entry.getValue().isDirectory(), actualEntry.isDirectory());
+    }
+  }
+
   private void assertContains(List<String> messages, String expectedFragment) {
     for (String message : messages) {
       if (message.contains(expectedFragment)) {
@@ -261,6 +356,69 @@ class PatchApplierTest {
       outputStream.putNextEntry(new ZipEntry("sample/Placeholder.class"));
       outputStream.write("placeholder".getBytes(StandardCharsets.UTF_8));
       outputStream.closeEntry();
+    }
+  }
+
+  private void downgradeToLegacyPatchBundle(Path sourceJar, Path legacyJar) throws IOException {
+    try (ZipFile sourceZip = new ZipFile(sourceJar.toFile());
+        ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(legacyJar))) {
+      Enumeration<? extends ZipEntry> entries = sourceZip.entries();
+      while (entries.hasMoreElements()) {
+        ZipEntry sourceEntry = entries.nextElement();
+        if (PatchMetadataIO.BASELINE_ENTRIES_INDEX.equals(sourceEntry.getName())) {
+          continue;
+        }
+        if (PatchMetadataIO.PATCH_PROPERTIES.equals(sourceEntry.getName())) {
+          String content = readUtf8(sourceZip, sourceEntry);
+          content = content.replace("format.version=2\n", "format.version=1\n");
+          content = content.replaceAll("(?m)^baseline\\.entry\\.(crc\\.sum|count)=.*\\n", "");
+          writeUtf8(outputStream, sourceEntry.getName(), content);
+          continue;
+        }
+        copyZipEntry(sourceZip, sourceEntry, outputStream);
+      }
+    }
+  }
+
+  private void writeUtf8(ZipOutputStream outputStream, String entryName, String content)
+      throws IOException {
+    ZipEntry zipEntry = new ZipEntry(entryName);
+    outputStream.putNextEntry(zipEntry);
+    outputStream.write(content.getBytes(StandardCharsets.UTF_8));
+    outputStream.closeEntry();
+  }
+
+  private void copyZipEntry(ZipFile sourceZip, ZipEntry sourceEntry, ZipOutputStream outputStream)
+      throws IOException {
+    ZipEntry zipEntry = new ZipEntry(sourceEntry.getName());
+    outputStream.putNextEntry(zipEntry);
+    if (!sourceEntry.isDirectory()) {
+      try (InputStream inputStream = sourceZip.getInputStream(sourceEntry)) {
+        byte[] buffer = new byte[4096];
+        for (; ; ) {
+          int read = inputStream.read(buffer);
+          if (read < 0) {
+            break;
+          }
+          outputStream.write(buffer, 0, read);
+        }
+      }
+    }
+    outputStream.closeEntry();
+  }
+
+  private String readUtf8(ZipFile zipFile, ZipEntry zipEntry) throws IOException {
+    try (InputStream inputStream = zipFile.getInputStream(zipEntry)) {
+      byte[] buffer = new byte[4096];
+      java.io.ByteArrayOutputStream outputStream = new java.io.ByteArrayOutputStream();
+      for (; ; ) {
+        int read = inputStream.read(buffer);
+        if (read < 0) {
+          break;
+        }
+        outputStream.write(buffer, 0, read);
+      }
+      return new String(outputStream.toByteArray(), StandardCharsets.UTF_8);
     }
   }
 }

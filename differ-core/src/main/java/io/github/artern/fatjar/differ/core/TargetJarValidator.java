@@ -2,7 +2,9 @@ package io.github.artern.fatjar.differ.core;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -14,77 +16,82 @@ public final class TargetJarValidator {
   private final SpringBootFatJarScanner scanner = new SpringBootFatJarScanner();
 
   /**
-   * Verifies that the currently installed archive is byte-for-byte the same as the baseline used
-   * when the patch was created.
+   * Verifies that the currently installed archive expands to the same entry set as the baseline
+   * used when the patch was created.
    */
   public void validateBaseline(Path currentJar, PatchManifest patchManifest) throws IOException {
-    String currentSha256 = HashingSupport.sha256Hex(currentJar);
-    if (!currentSha256.equalsIgnoreCase(patchManifest.getBaselineSha256())) {
-      throw new IllegalStateException(
-          "Current jar does not match the baseline used to create this patch. expected="
-              + patchManifest.getBaselineSha256()
-              + ", actual="
-              + currentSha256);
-    }
+    JarSnapshot snapshot = scanner.scan(currentJar);
+    validateEntries(
+        snapshot.getAllEntries(),
+        patchManifest.getBaselineEntries(),
+        patchManifest.getBaselineEntryCount(),
+        patchManifest.getBaselineEntryCrcSumHex(),
+        false,
+        "Current jar");
   }
 
-  /** Verifies preamble, entries, and logical area fingerprints after patch application. */
-  public void validateTarget(Path outputJar, PatchManifest patchManifest) throws IOException {
+  /** Verifies preamble bytes and entry metadata after patch application. */
+  public void validateTarget(Path outputJar, PatchManifest patchManifest, byte[] expectedPreamble)
+      throws IOException {
     JarSnapshot snapshot = scanner.scan(outputJar);
-    if (snapshot.getArchivePreamble().getSize() != patchManifest.getTargetArchivePreambleSize()) {
+    byte[] actualPreamble = snapshot.getArchivePreamble().getBytes();
+    if (actualPreamble.length != patchManifest.getTargetArchivePreambleSize()) {
       throw new IllegalStateException(
           "Target archive preamble size mismatch. expected="
               + patchManifest.getTargetArchivePreambleSize()
               + ", actual="
-              + snapshot.getArchivePreamble().getSize());
+              + actualPreamble.length);
     }
-    if (!snapshot
-        .getArchivePreamble()
-        .getSha256()
-        .equalsIgnoreCase(patchManifest.getTargetArchivePreambleSha256())) {
+    if (!Arrays.equals(actualPreamble, expectedPreamble)) {
+      throw new IllegalStateException("Target archive preamble content mismatch.");
+    }
+    validateEntries(
+        snapshot.getAllEntries(),
+        patchManifest.getTargetEntries(),
+        patchManifest.getTargetEntryCount(),
+        patchManifest.getTargetEntryCrcSumHex(),
+        true,
+        "Target jar");
+  }
+
+  private void validateEntries(
+      Map<String, JarEntrySnapshot> actualEntries,
+      List<JarEntrySnapshot> expectedEntries,
+      int expectedCount,
+      String expectedCrcSumHex,
+      boolean includeMethod,
+      String label) {
+    if (actualEntries.size() != expectedCount) {
       throw new IllegalStateException(
-          "Target archive preamble hash mismatch. expected="
-              + patchManifest.getTargetArchivePreambleSha256()
+          label
+              + " entry count mismatch. expected="
+              + expectedCount
               + ", actual="
-              + snapshot.getArchivePreamble().getSha256());
+              + actualEntries.size());
     }
-    if (snapshot.getAllEntries().size() != patchManifest.getTargetEntryCount()) {
-      throw new IllegalStateException(
-          "Target entry count mismatch. expected="
-              + patchManifest.getTargetEntryCount()
-              + ", actual="
-              + snapshot.getAllEntries().size());
-    }
-    Iterator<JarEntrySnapshot> expectedIterator = patchManifest.getTargetEntries().iterator();
+    Iterator<JarEntrySnapshot> expectedIterator = expectedEntries.iterator();
     Iterator<Map.Entry<String, JarEntrySnapshot>> actualIterator =
-        snapshot.getAllEntries().entrySet().iterator();
+        actualEntries.entrySet().iterator();
     while (expectedIterator.hasNext() && actualIterator.hasNext()) {
       JarEntrySnapshot expected = expectedIterator.next();
       JarEntrySnapshot actual = actualIterator.next().getValue();
-      if (!expected.sameContent(actual)) {
-        throw new IllegalStateException("Target jar entry mismatch at " + expected.getPath());
+      boolean matches =
+          includeMethod ? expected.sameContent(actual) : expected.samePayloadContent(actual);
+      if (!matches) {
+        throw new IllegalStateException(label + " entry mismatch at " + expected.getPath());
       }
     }
+    if (expectedCrcSumHex == null || expectedCrcSumHex.isEmpty()) {
+      return;
+    }
     long crcSum = 0L;
-    for (JarEntrySnapshot actual : snapshot.getAllEntries().values()) {
+    for (JarEntrySnapshot actual : actualEntries.values()) {
       crcSum += actual.getCrc32();
     }
     String actualCrcSum = Long.toUnsignedString(crcSum, 16);
-    if (!actualCrcSum.equalsIgnoreCase(patchManifest.getTargetEntryCrcSumHex())) {
+    if (!actualCrcSum.equalsIgnoreCase(expectedCrcSumHex)) {
       throw new IllegalStateException(
-          "Target jar CRC sum mismatch. expected="
-              + patchManifest.getTargetEntryCrcSumHex()
-              + ", actual="
-              + actualCrcSum);
-    }
-    for (LogicalArea logicalArea : LogicalArea.values()) {
-      LogicalUnitSnapshot logicalUnitSnapshot = snapshot.getLogicalUnit(logicalArea);
-      String expectedFingerprint =
-          patchManifest.getLogicalUnitFingerprints().get(logicalArea.getId());
-      if (!logicalUnitSnapshot.getFingerprint().equals(expectedFingerprint)) {
-        throw new IllegalStateException(
-            "Target logical area mismatch for " + logicalArea.getPrefix());
-      }
+          label + " CRC sum mismatch. expected=" + expectedCrcSumHex + ", actual=" + actualCrcSum);
     }
   }
 }

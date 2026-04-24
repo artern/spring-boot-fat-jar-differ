@@ -1,6 +1,7 @@
 package io.github.artern.fatjar.differ.core;
 
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -13,15 +14,11 @@ public final class LogicalUnitSnapshot {
 
   private final LogicalArea logicalArea;
   private final SortedMap<String, JarEntrySnapshot> entries;
-  private final String crcSumHex;
-  private final String fingerprint;
 
   public LogicalUnitSnapshot(LogicalArea logicalArea, Map<String, JarEntrySnapshot> sourceEntries) {
     this.logicalArea = logicalArea;
     this.entries =
         Collections.unmodifiableSortedMap(new TreeMap<String, JarEntrySnapshot>(sourceEntries));
-    this.crcSumHex = computeCrcSum(entries);
-    this.fingerprint = computeFingerprint(entries);
   }
 
   public LogicalArea getLogicalArea() {
@@ -36,39 +33,24 @@ public final class LogicalUnitSnapshot {
     return entries.isEmpty();
   }
 
-  public String getCrcSumHex() {
-    return crcSumHex;
-  }
-
-  public String getFingerprint() {
-    return fingerprint;
-  }
-
-  private static String computeCrcSum(SortedMap<String, JarEntrySnapshot> entries) {
-    long sum = 0L;
-    for (JarEntrySnapshot entry : entries.values()) {
-      sum += entry.getCrc32();
+  /**
+   * Compares two logical units entry-by-entry and stops at the first difference because any single
+   * mismatch already means the whole logical tree must be replaced.
+   */
+  public boolean structurallyEquals(LogicalUnitSnapshot other) {
+    if (other == null
+        || logicalArea != other.logicalArea
+        || entries.size() != other.entries.size()) {
+      return false;
     }
-    return Long.toUnsignedString(sum, 16);
-  }
-
-  private static String computeFingerprint(SortedMap<String, JarEntrySnapshot> entries) {
-    // Fingerprints use stable sorted metadata so two scans of the same archive
-    // produce the same logical-area identity regardless of traversal order.
-    StringBuilder builder = new StringBuilder();
-    for (JarEntrySnapshot entry : entries.values()) {
-      builder
-          .append(entry.getPath())
-          .append('|')
-          .append(entry.getCrc32())
-          .append('|')
-          .append(entry.getSize())
-          .append('|')
-          .append(entry.isDirectory())
-          .append('|')
-          .append(entry.getMethod())
-          .append('\n');
+    Iterator<Map.Entry<String, JarEntrySnapshot>> leftIterator = entries.entrySet().iterator();
+    Iterator<Map.Entry<String, JarEntrySnapshot>> rightIterator =
+        other.entries.entrySet().iterator();
+    while (leftIterator.hasNext() && rightIterator.hasNext()) {
+      if (!leftIterator.next().getValue().sameContent(rightIterator.next().getValue())) {
+        return false;
+      }
     }
-    return HashingSupport.sha256Hex(builder.toString());
+    return !leftIterator.hasNext() && !rightIterator.hasNext();
   }
 }

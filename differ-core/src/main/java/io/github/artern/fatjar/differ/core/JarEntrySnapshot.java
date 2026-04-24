@@ -52,11 +52,18 @@ public final class JarEntrySnapshot {
 
   /** Compares the entry shape and content metadata used by the differ. */
   public boolean sameContent(JarEntrySnapshot other) {
+    return samePayloadContent(other) && method == other.method;
+  }
+
+  /**
+   * Compares extracted entry content identity while ignoring archive-level metadata such as the zip
+   * compression method.
+   */
+  public boolean samePayloadContent(JarEntrySnapshot other) {
     return other != null
         && directory == other.directory
         && crc32 == other.crc32
         && size == other.size
-        && method == other.method
         && path.equals(other.path);
   }
 }

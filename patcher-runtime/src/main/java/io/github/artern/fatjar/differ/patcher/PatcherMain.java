@@ -68,7 +68,6 @@ public final class PatcherMain {
 
     System.out.println("Backup created at: " + backupFile);
     System.out.println("Patched jar replaced in-place: " + currentJar);
-    System.out.println("Target jar SHA-256: " + patchManifest.getTargetSha256());
   }
 
   private static Path resolveSelfJar() throws URISyntaxException {

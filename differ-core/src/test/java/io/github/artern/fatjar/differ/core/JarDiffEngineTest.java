@@ -17,6 +17,7 @@ import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -58,9 +59,9 @@ class JarDiffEngineTest {
     assertEquals(
         "#!/bin/sh\necho new\n".getBytes(StandardCharsets.UTF_8).length,
         plan.getPatchManifest().getTargetArchivePreambleSize());
-    assertEquals(
-        plan.getTargetSnapshot().getArchivePreamble().getSha256(),
-        plan.getPatchManifest().getTargetArchivePreambleSha256());
+    assertArrayEquals(
+        "#!/bin/sh\necho new\n".getBytes(StandardCharsets.UTF_8),
+        plan.getTargetSnapshot().getArchivePreamble().getBytes());
   }
 
   @Test

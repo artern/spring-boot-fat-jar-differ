@@ -15,11 +15,14 @@ import java.util.zip.ZipOutputStream;
 /** Serializes the patch manifest into the executable patcher jar and restores it at patch time. */
 public final class PatchMetadataIO {
 
+  private static final String SUPPORTED_FORMAT_VERSION = "2";
+
   public static final String PATCH_ROOT = "BOOT-PATCH/";
   public static final String PAYLOAD_ROOT = PATCH_ROOT + "payload/content/";
   public static final String PREAMBLE_PAYLOAD = PATCH_ROOT + "payload/archive-preamble.bin";
   public static final String PATCH_PROPERTIES = PATCH_ROOT + "patch.properties";
   public static final String OPERATIONS_INDEX = PATCH_ROOT + "operations.tsv";
+  public static final String BASELINE_ENTRIES_INDEX = PATCH_ROOT + "baseline-entries.tsv";
   public static final String TARGET_ENTRIES_INDEX = PATCH_ROOT + "target-entries.tsv";
 
   /** Writes all manifest files under {@value #PATCH_ROOT}. */
@@ -32,39 +35,42 @@ public final class PatchMetadataIO {
     ZipEntries.writeUtf8(
         zipOutputStream, OPERATIONS_INDEX, encodeOperations(patchManifest.getOperations()));
     ZipEntries.writeUtf8(
-        zipOutputStream,
-        TARGET_ENTRIES_INDEX,
-        encodeTargetEntries(patchManifest.getTargetEntries()));
+        zipOutputStream, BASELINE_ENTRIES_INDEX, encodeEntries(patchManifest.getBaselineEntries()));
+    ZipEntries.writeUtf8(
+        zipOutputStream, TARGET_ENTRIES_INDEX, encodeEntries(patchManifest.getTargetEntries()));
   }
 
   /** Reads the serialized manifest back from an executable patcher jar. */
   public PatchManifest read(ZipFile zipFile) throws IOException {
     PatchManifest patchManifest = new PatchManifest();
     Map<String, String> properties = readProperties(readUtf8(zipFile, PATCH_PROPERTIES));
-    patchManifest.setFormatVersion(properties.get("format.version"));
+    String formatVersion = properties.get("format.version");
+    if (!SUPPORTED_FORMAT_VERSION.equals(formatVersion)) {
+      throw new IOException(
+          "Unsupported patch format version: "
+              + formatVersion
+              + ". Regenerate the patcher with the current toolchain.");
+    }
+    patchManifest.setFormatVersion(formatVersion);
     patchManifest.setToolVersion(properties.get("tool.version"));
     patchManifest.setCreatedAt(properties.get("created.at"));
     patchManifest.setBaselineFileName(properties.get("baseline.file.name"));
-    patchManifest.setBaselineSha256(properties.get("baseline.sha256"));
+    patchManifest.setBaselineEntryCrcSumHex(properties.get("baseline.entry.crc.sum"));
+    String baselineEntryCount = properties.get("baseline.entry.count");
+    if (baselineEntryCount == null || baselineEntryCount.isEmpty()) {
+      throw new IOException("Missing baseline entry count in patch metadata");
+    }
+    patchManifest.setBaselineEntryCount(Integer.parseInt(baselineEntryCount));
     patchManifest.setTargetFileName(properties.get("target.file.name"));
-    patchManifest.setTargetSha256(properties.get("target.sha256"));
-    patchManifest.setTargetArchivePreambleSha256(properties.get("target.archive.preamble.sha256"));
     patchManifest.setTargetArchivePreambleSize(
         Integer.parseInt(properties.get("target.archive.preamble.size")));
     patchManifest.setTargetEntryCrcSumHex(properties.get("target.entry.crc.sum"));
     patchManifest.setTargetEntryCount(Integer.parseInt(properties.get("target.entry.count")));
-    for (LogicalArea logicalArea : LogicalArea.values()) {
-      patchManifest
-          .getLogicalUnitCrcSums()
-          .put(logicalArea.getId(), properties.get("unit." + logicalArea.getId() + ".crc.sum"));
-      patchManifest
-          .getLogicalUnitFingerprints()
-          .put(logicalArea.getId(), properties.get("unit." + logicalArea.getId() + ".fingerprint"));
-    }
     patchManifest.getOperations().addAll(decodeOperations(readUtf8(zipFile, OPERATIONS_INDEX)));
     patchManifest
-        .getTargetEntries()
-        .addAll(decodeTargetEntries(readUtf8(zipFile, TARGET_ENTRIES_INDEX)));
+        .getBaselineEntries()
+        .addAll(decodeEntries(readUtf8(zipFile, BASELINE_ENTRIES_INDEX)));
+    patchManifest.getTargetEntries().addAll(decodeEntries(readUtf8(zipFile, TARGET_ENTRIES_INDEX)));
     return patchManifest;
   }
 
@@ -76,24 +82,14 @@ public final class PatchMetadataIO {
     properties.put("tool.version", patchManifest.getToolVersion());
     properties.put("created.at", patchManifest.getCreatedAt());
     properties.put("baseline.file.name", patchManifest.getBaselineFileName());
-    properties.put("baseline.sha256", patchManifest.getBaselineSha256());
+    properties.put("baseline.entry.crc.sum", patchManifest.getBaselineEntryCrcSumHex());
+    properties.put("baseline.entry.count", Integer.toString(patchManifest.getBaselineEntryCount()));
     properties.put("target.file.name", patchManifest.getTargetFileName());
-    properties.put("target.sha256", patchManifest.getTargetSha256());
-    properties.put(
-        "target.archive.preamble.sha256", patchManifest.getTargetArchivePreambleSha256());
     properties.put(
         "target.archive.preamble.size",
         Integer.toString(patchManifest.getTargetArchivePreambleSize()));
     properties.put("target.entry.crc.sum", patchManifest.getTargetEntryCrcSumHex());
     properties.put("target.entry.count", Integer.toString(patchManifest.getTargetEntryCount()));
-    for (LogicalArea logicalArea : LogicalArea.values()) {
-      properties.put(
-          "unit." + logicalArea.getId() + ".crc.sum",
-          patchManifest.getLogicalUnitCrcSums().get(logicalArea.getId()));
-      properties.put(
-          "unit." + logicalArea.getId() + ".fingerprint",
-          patchManifest.getLogicalUnitFingerprints().get(logicalArea.getId()));
-    }
     StringBuilder builder = new StringBuilder();
     for (Map.Entry<String, String> entry : properties.entrySet()) {
       builder
@@ -119,19 +115,19 @@ public final class PatchMetadataIO {
     return builder.toString();
   }
 
-  private String encodeTargetEntries(List<JarEntrySnapshot> targetEntries) {
+  private String encodeEntries(List<JarEntrySnapshot> entries) {
     StringBuilder builder = new StringBuilder();
-    for (JarEntrySnapshot targetEntry : targetEntries) {
+    for (JarEntrySnapshot entry : entries) {
       builder
-          .append(targetEntry.getPath())
+          .append(entry.getPath())
           .append('\t')
-          .append(targetEntry.getCrc32())
+          .append(entry.getCrc32())
           .append('\t')
-          .append(targetEntry.getSize())
+          .append(entry.getSize())
           .append('\t')
-          .append(targetEntry.isDirectory())
+          .append(entry.isDirectory())
           .append('\t')
-          .append(targetEntry.getMethod())
+          .append(entry.getMethod())
           .append('\n');
     }
     return builder.toString();
@@ -170,7 +166,7 @@ public final class PatchMetadataIO {
     return operations;
   }
 
-  private List<JarEntrySnapshot> decodeTargetEntries(String content) {
+  private List<JarEntrySnapshot> decodeEntries(String content) {
     List<JarEntrySnapshot> entries = new ArrayList<JarEntrySnapshot>();
     String[] lines = content.split("\\r?\\n");
     for (String line : lines) {
