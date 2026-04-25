@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -16,16 +17,17 @@ public final class TargetJarValidator {
   private final SpringBootFatJarScanner scanner = new SpringBootFatJarScanner();
 
   /**
-   * Verifies that the currently installed archive expands to the same entry set as the baseline
-   * used when the patch was created.
+   * Verifies that the currently installed archive still matches the immutable part of the baseline
+   * and does not contain extra immutable entries that the patch would leave behind.
    */
   public void validateBaseline(Path currentJar, PatchManifest patchManifest) throws IOException {
     JarSnapshot snapshot = scanner.scan(currentJar);
+    List<PatchOperation> operations = patchManifest.getOperations();
     validateEntries(
-        snapshot.getAllEntries(),
-        patchManifest.getBaselineEntries(),
-        patchManifest.getBaselineEntryCount(),
-        patchManifest.getBaselineEntryCrcSumHex(),
+        immutableActualEntries(snapshot.getAllEntries(), operations),
+        immutableExpectedEntries(patchManifest.getBaselineEntries(), operations),
+        immutableEntryCount(patchManifest.getBaselineEntries(), operations),
+        immutableEntryCrcSumHex(patchManifest.getBaselineEntries(), operations),
         false,
         "Current jar");
   }
@@ -93,5 +95,43 @@ public final class TargetJarValidator {
       throw new IllegalStateException(
           label + " CRC sum mismatch. expected=" + expectedCrcSumHex + ", actual=" + actualCrcSum);
     }
+  }
+
+  private Map<String, JarEntrySnapshot> immutableActualEntries(
+      Map<String, JarEntrySnapshot> actualEntries, List<PatchOperation> operations) {
+    Map<String, JarEntrySnapshot> immutableEntries = new LinkedHashMap<String, JarEntrySnapshot>();
+    for (Map.Entry<String, JarEntrySnapshot> entry : actualEntries.entrySet()) {
+      if (!PatchEntryMutability.isMutable(entry.getKey(), operations)) {
+        immutableEntries.put(entry.getKey(), entry.getValue());
+      }
+    }
+    return immutableEntries;
+  }
+
+  private List<JarEntrySnapshot> immutableExpectedEntries(
+      List<JarEntrySnapshot> expectedEntries, List<PatchOperation> operations) {
+    List<JarEntrySnapshot> immutableEntries = new java.util.ArrayList<JarEntrySnapshot>();
+    for (JarEntrySnapshot entry : expectedEntries) {
+      if (!PatchEntryMutability.isMutable(entry.getPath(), operations)) {
+        immutableEntries.add(entry);
+      }
+    }
+    return immutableEntries;
+  }
+
+  private int immutableEntryCount(
+      List<JarEntrySnapshot> expectedEntries, List<PatchOperation> operations) {
+    return immutableExpectedEntries(expectedEntries, operations).size();
+  }
+
+  private String immutableEntryCrcSumHex(
+      List<JarEntrySnapshot> expectedEntries, List<PatchOperation> operations) {
+    long crcSum = 0L;
+    for (JarEntrySnapshot entry : expectedEntries) {
+      if (!PatchEntryMutability.isMutable(entry.getPath(), operations)) {
+        crcSum += entry.getCrc32();
+      }
+    }
+    return Long.toUnsignedString(crcSum, 16);
   }
 }

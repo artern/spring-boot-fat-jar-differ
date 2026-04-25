@@ -176,6 +176,59 @@ class PatchApplierTest {
   }
 
   @Test
+  void appliesPatchBundleWhenCurrentJarDiffersOnlyOnMutablePaths() throws Exception {
+    Path baselineJar = tempDir.resolve("baseline-mutable.jar");
+    Path currentJar = tempDir.resolve("current-mutable.jar");
+    Path targetJar = tempDir.resolve("target-mutable.jar");
+    Path templateJar = tempDir.resolve("template.jar");
+    Path patchBundle = tempDir.resolve("spring-boot-fat-jar-patcher.jar");
+    Path outputJar = tempDir.resolve("output-mutable.jar");
+
+    writeJar(baselineJar, baselineEntries());
+    writeJar(currentJar, currentMutableEntries());
+    writeJar(targetJar, targetEntries());
+    writeTemplateJar(templateJar);
+
+    ExecutablePatchJarBuilder builder = new ExecutablePatchJarBuilder();
+    try (InputStream templateStream = Files.newInputStream(templateJar)) {
+      builder.build(baselineJar, targetJar, templateStream, patchBundle, "test-version");
+    }
+
+    new PatchApplier().apply(currentJar, patchBundle, outputJar);
+
+    SpringBootFatJarScanner scanner = new SpringBootFatJarScanner();
+    JarSnapshot actual = scanner.scan(outputJar);
+    JarSnapshot expected = scanner.scan(targetJar);
+    assertSnapshotEntriesMatch(expected, actual);
+  }
+
+  @Test
+  void rejectsCurrentJarWithExtraImmutableEntry() throws Exception {
+    Path baselineJar = tempDir.resolve("baseline-extra.jar");
+    Path currentJar = tempDir.resolve("current-extra.jar");
+    Path targetJar = tempDir.resolve("target-extra.jar");
+    Path templateJar = tempDir.resolve("template.jar");
+    Path patchBundle = tempDir.resolve("spring-boot-fat-jar-patcher.jar");
+    Path outputJar = tempDir.resolve("output-extra.jar");
+
+    writeJar(baselineJar, baselineEntries());
+    writeJar(currentJar, currentWithExtraImmutableEntries());
+    writeJar(targetJar, targetEntries());
+    writeTemplateJar(templateJar);
+
+    ExecutablePatchJarBuilder builder = new ExecutablePatchJarBuilder();
+    try (InputStream templateStream = Files.newInputStream(templateJar)) {
+      builder.build(baselineJar, targetJar, templateStream, patchBundle, "test-version");
+    }
+
+    IllegalStateException exception =
+        assertThrows(
+            IllegalStateException.class,
+            () -> new PatchApplier().apply(currentJar, patchBundle, outputJar));
+    assertTrue(exception.getMessage().contains("Current jar entry count mismatch"));
+  }
+
+  @Test
   void rejectsLegacyPatchBundleWithoutBaselineEntriesMetadata() throws Exception {
     Path baselineJar = tempDir.resolve("baseline-legacy.jar");
     Path targetJar = tempDir.resolve("target-legacy.jar");
@@ -229,6 +282,27 @@ class PatchApplierTest {
     entries.put("BOOT-INF/lib/dependency.jar", "dep-new");
     entries.put("application.properties", "mode=new\n");
     entries.put("added.txt", "add-me\n");
+    return entries;
+  }
+
+  private Map<String, String> currentMutableEntries() {
+    Map<String, String> entries = new LinkedHashMap<String, String>();
+    entries.put("META-INF/", null);
+    entries.put("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nMain-Class: sample.Current\n");
+    entries.put("META-INF/extra.txt", "current-meta\n");
+    entries.put("BOOT-INF/", null);
+    entries.put("BOOT-INF/classes/", null);
+    entries.put("BOOT-INF/classes/sample/App.class", "current-app");
+    entries.put("BOOT-INF/classes/legacy/Old.class", "legacy-class");
+    entries.put("BOOT-INF/lib/dependency.jar", "dep-current");
+    entries.put("application.properties", "mode=current\n");
+    entries.put("added.txt", "stale-add\n");
+    return entries;
+  }
+
+  private Map<String, String> currentWithExtraImmutableEntries() {
+    Map<String, String> entries = new LinkedHashMap<String, String>(baselineEntries());
+    entries.put("local-only.txt", "keep-me\n");
     return entries;
   }
 

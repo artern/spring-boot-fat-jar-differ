@@ -13,6 +13,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
+import io.github.artern.fatjar.differ.core.PatchEntryMutability;
 import io.github.artern.fatjar.differ.core.PatchManifest;
 import io.github.artern.fatjar.differ.core.PatchMetadataIO;
 import io.github.artern.fatjar.differ.core.PatchOperation;
@@ -121,7 +122,7 @@ public final class PatchApplier {
     Enumeration<? extends ZipEntry> entries = currentZip.entries();
     while (entries.hasMoreElements()) {
       ZipEntry zipEntry = entries.nextElement();
-      if (shouldSkip(zipEntry.getName(), patchManifest)) {
+      if (PatchEntryMutability.isMutable(zipEntry.getName(), patchManifest.getOperations())) {
         continue;
       }
       if (writtenEntries.add(zipEntry.getName())) {
@@ -154,22 +155,6 @@ public final class PatchApplier {
       }
     }
     return applied;
-  }
-
-  private boolean shouldSkip(String entryName, PatchManifest patchManifest) {
-    for (PatchOperation operation : patchManifest.getOperations()) {
-      if (operation.getType() == PatchOperation.Type.REPLACE_TREE
-          || operation.getType() == PatchOperation.Type.DELETE_TREE) {
-        if (entryName.startsWith(operation.getTargetPath())) {
-          return true;
-        }
-      }
-      if (entryName.equals(operation.getTargetPath())) {
-        return operation.getType() == PatchOperation.Type.DELETE_ENTRY
-            || operation.getType() == PatchOperation.Type.REPLACE_ENTRY;
-      }
-    }
-    return false;
   }
 
   private int copyPayloadTree(
