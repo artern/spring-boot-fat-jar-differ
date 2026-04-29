@@ -1,10 +1,11 @@
 plugins {
     id 'base'
     id 'com.diffplug.spotless' version '6.13.0' apply false
+    id 'io.github.gradle-nexus.publish-plugin' version '2.0.0'
 }
 
 group = 'io.github.artern'
-version = '0.1.0-SNAPSHOT'
+version = '0.1.0'
 
 ext {
     javaVersion = JavaVersion.VERSION_1_8
@@ -14,6 +15,7 @@ ext {
 subprojects {
     apply plugin: 'java-library'
     apply plugin: 'com.diffplug.spotless'
+    apply plugin: 'signing'
 
     group = rootProject.group
     version = rootProject.version
@@ -77,6 +79,42 @@ subprojects {
     tasks.named('processResources') {
         dependsOn tasks.named('spotlessMiscApply')
     }
+
+    plugins.withId('maven-publish') {
+        def signingKey = providers.gradleProperty('signingKey')
+                .orElse(providers.environmentVariable('ORG_GRADLE_PROJECT_signingKey'))
+        def signingPassword = providers.gradleProperty('signingPassword')
+                .orElse(providers.environmentVariable('ORG_GRADLE_PROJECT_signingPassword'))
+        def publishingExtension = extensions.getByType(org.gradle.api.publish.PublishingExtension)
+
+        extensions.configure(org.gradle.plugins.signing.SigningExtension) { signingExtension ->
+            if (signingKey.present && signingPassword.present) {
+                signingExtension.useInMemoryPgpKeys(signingKey.get(), signingPassword.get())
+            }
+
+            signingExtension.sign(publishingExtension.publications)
+        }
+
+        tasks.withType(org.gradle.plugins.signing.Sign).configureEach {
+            onlyIf {
+                !project.version.toString().endsWith('-SNAPSHOT') && signingKey.present && signingPassword.present
+            }
+        }
+    }
+}
+
+nexusPublishing {
+    repositories {
+        sonatype {
+            nexusUrl = uri('https://ossrh-staging-api.central.sonatype.com/service/local/')
+            snapshotRepositoryUrl = uri('https://central.sonatype.com/repository/maven-snapshots/')
+        }
+    }
+
+    transitionCheckOptions {
+        maxRetries = 120
+        delayBetween = java.time.Duration.ofSeconds(10)
+    }
 }
 
 apply plugin: 'com.diffplug.spotless'
@@ -111,6 +149,56 @@ configure([project(':differ-cli'), project(':patcher-runtime')]) {
 tasks.register('assembleBinaries') {
     dependsOn ':differ-cli:fatJar'
     dependsOn ':patcher-runtime:fatJar'
+}
+
+def centralReleaseProperties = [
+        sonatypeUsername: providers.gradleProperty('sonatypeUsername')
+                .orElse(providers.environmentVariable('ORG_GRADLE_PROJECT_sonatypeUsername')),
+        sonatypePassword: providers.gradleProperty('sonatypePassword')
+                .orElse(providers.environmentVariable('ORG_GRADLE_PROJECT_sonatypePassword')),
+        signingKey      : providers.gradleProperty('signingKey')
+                .orElse(providers.environmentVariable('ORG_GRADLE_PROJECT_signingKey')),
+        signingPassword : providers.gradleProperty('signingPassword')
+                .orElse(providers.environmentVariable('ORG_GRADLE_PROJECT_signingPassword'))
+]
+
+tasks.register('verifyCentralReleasePrerequisites') {
+    doLast {
+        if (project.version.toString().endsWith('-SNAPSHOT')) {
+            throw new GradleException('Set a non-SNAPSHOT version before releasing to Maven Central.')
+        }
+
+        centralReleaseProperties.each { propertyName, propertyValue ->
+            if (!propertyValue.present || propertyValue.get().trim().isEmpty()) {
+                throw new GradleException("Missing ${propertyName}. Provide -P${propertyName}=... or ORG_GRADLE_PROJECT_${propertyName}=...")
+            }
+        }
+    }
+}
+
+tasks.register('publishToolingToSonatype') {
+    dependsOn tasks.named('verifyCentralReleasePrerequisites')
+    dependsOn ':differ-core:publishToSonatype'
+    dependsOn ':differ-cli:publishToSonatype'
+    dependsOn ':gradle-plugin:publishToSonatype'
+}
+
+tasks.named('closeSonatypeStagingRepository') {
+    mustRunAfter tasks.named('publishToolingToSonatype')
+}
+
+tasks.named('closeAndReleaseSonatypeStagingRepository') {
+    mustRunAfter tasks.named('publishToolingToSonatype')
+}
+
+tasks.register('stageToolingToCentral') {
+    dependsOn tasks.named('publishToolingToSonatype')
+    dependsOn tasks.named('closeSonatypeStagingRepository')
+}
+
+tasks.register('releaseToolingToCentral') {
+    dependsOn tasks.named('publishToolingToSonatype')
+    dependsOn tasks.named('closeAndReleaseSonatypeStagingRepository')
 }
 
 tasks.register('publishToolingToMavenLocal') {

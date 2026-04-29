@@ -22,7 +22,7 @@ The repository publishes under the `io.github.artern` namespace and provides thr
 - `BOOT-INF/classes/` is treated as a whole-tree replacement area.
 - `WEB-INF/classes/` is treated as a whole-tree replacement area.
 - All other entries use file-level add, replace, and delete operations.
-- The generated patch bundle stores target entry metadata, logical-area fingerprints, and target preamble information under `BOOT-PATCH/`.
+- The generated patch bundle stores baseline and target entry metadata plus target preamble information under `BOOT-PATCH/`.
 
 This design favors safe reconstruction and deterministic validation over the smallest possible payload.
 
@@ -50,9 +50,9 @@ Publish the local development artifacts needed by downstream Gradle and Maven co
 
 Published coordinates:
 
-- `io.github.artern:differ-core:0.1.0-SNAPSHOT`
-- `io.github.artern:differ-cli:0.1.0-SNAPSHOT`
-- `io.github.artern:gradle-plugin:0.1.0-SNAPSHOT`
+- `io.github.artern:differ-core:0.1.0`
+- `io.github.artern:differ-cli:0.1.0`
+- `io.github.artern:gradle-plugin:0.1.0`
 
 Format the repository with Spotless:
 
@@ -98,7 +98,7 @@ Declare the plugin through `pluginManagement` so Gradle can resolve the locally 
 ```groovy
 pluginManagement {
     plugins {
-        id 'io.github.artern.spring-boot-fat-jar-differ' version '0.1.0-SNAPSHOT'
+        id 'io.github.artern.spring-boot-fat-jar-differ' version '0.1.0'
     }
     repositories {
         mavenLocal()
@@ -140,24 +140,23 @@ Defaults:
 
 If the baseline archive is missing, the task fails with a message that points to the expected cache path.
 
-For executable WAR projects that still use legacy `buildscript` style, add `classpath "io.github.artern:gradle-plugin:0.1.0-SNAPSHOT"` and then `apply plugin: 'io.github.artern.spring-boot-fat-jar-differ'`.
+For executable WAR projects that still use legacy `buildscript` style, add `classpath "io.github.artern:gradle-plugin:0.1.0"` and then `apply plugin: 'io.github.artern.spring-boot-fat-jar-differ'`.
 
 ## Maven integration
 
 Maven builds cannot apply the Gradle plugin directly. Use the published CLI artifact instead.
 
-The `nice-admin-projects/mdm` module shows the intended pattern through a Maven profile named `spring-boot-fat-jar-differ`:
+Maven profile named `spring-boot-fat-jar-differ`:
 
 1. Fail clearly when the baseline archive is missing.
-2. Resolve `io.github.artern:differ-cli:0.1.0-SNAPSHOT` from `mavenLocal()`.
+2. Resolve `io.github.artern:differ-cli:0.1.0` from `mavenLocal()`.
 3. Generate the executable patcher during `verify`.
 4. Refresh the cached baseline after successful generation.
 
 Example:
 
 ```bash
-cd /Users/anran/Documents/workspace-java/nice-admin-projects/mdm
-/Users/anran/opt/apache-maven-3.9.11/bin/mvn verify -Pspring-boot-fat-jar-differ
+mvn verify -Pspring-boot-fat-jar-differ
 ```
 
 ## Demo
@@ -168,5 +167,3 @@ The repository contains a real Spring Boot demo project at `demo-spring-boot/`.
 ./gradlew -p demo-spring-boot bootJar
 ./gradlew -p demo-spring-boot bootDiff
 ```
-
-The demo resolves the plugin from `mavenLocal()`, which matches the downstream integration path used in `nice-admin-projects`.

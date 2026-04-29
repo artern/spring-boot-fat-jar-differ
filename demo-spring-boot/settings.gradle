@@ -1,6 +1,6 @@
 pluginManagement {
     plugins {
-        id 'io.github.artern.spring-boot-fat-jar-differ' version '0.1.0-SNAPSHOT'
+        id 'io.github.artern.spring-boot-fat-jar-differ' version '0.1.0'
     }
 
     repositories {

@@ -22,7 +22,7 @@
 - `BOOT-INF/classes/` 作为整棵树替换。
 - `WEB-INF/classes/` 作为整棵树替换。
 - 其余条目按文件级别做新增、替换、删除。
-- 生成的补丁包会在 `BOOT-PATCH/` 下保存目标条目清单、逻辑区域指纹、CRC 汇总以及启动脚本前导区信息。
+- 生成的补丁包会在 `BOOT-PATCH/` 下保存 baseline 与 target 条目清单，以及启动脚本前导区信息。
 
 这个实现优先保证重建安全性和校验确定性，而不是追求最小 payload。
 
@@ -50,9 +50,9 @@
 
 发布坐标：
 
-- `io.github.artern:differ-core:0.1.0-SNAPSHOT`
-- `io.github.artern:differ-cli:0.1.0-SNAPSHOT`
-- `io.github.artern:gradle-plugin:0.1.0-SNAPSHOT`
+- `io.github.artern:differ-core:0.1.0`
+- `io.github.artern:differ-cli:0.1.0`
+- `io.github.artern:gradle-plugin:0.1.0`
 
 使用 Spotless 进行格式化：
 
@@ -98,7 +98,7 @@ java -jar ./patcher-my-app.jar ./current.jar ./backup
 ```groovy
 pluginManagement {
     plugins {
-        id 'io.github.artern.spring-boot-fat-jar-differ' version '0.1.0-SNAPSHOT'
+        id 'io.github.artern.spring-boot-fat-jar-differ' version '0.1.0'
     }
     repositories {
         mavenLocal()
@@ -140,24 +140,23 @@ springBootFatJarDiffer {
 
 如果 baseline 归档不存在，任务会明确失败并提示应放置的位置。
 
-对于仍使用老式 `buildscript` 方式的可执行 WAR 工程，可以在 `buildscript` classpath 中加入 `io.github.artern:gradle-plugin:0.1.0-SNAPSHOT`，然后再 `apply plugin: 'io.github.artern.spring-boot-fat-jar-differ'`。
+对于仍使用老式 `buildscript` 方式的可执行 WAR 工程，可以在 `buildscript` classpath 中加入 `io.github.artern:gradle-plugin:0.1.0`，然后再 `apply plugin: 'io.github.artern.spring-boot-fat-jar-differ'`。
 
 ## Maven 集成方式
 
 Maven 工程不能直接套用 Gradle 插件，应改为消费已发布的 CLI 工件。
 
-`nice-admin-projects/mdm` 已经给出推荐接法，通过 `spring-boot-fat-jar-differ` profile 实现：
+通过 `spring-boot-fat-jar-differ` profile 实现：
 
 1. baseline 缺失时明确失败。
-2. 从 `mavenLocal()` 解析 `io.github.artern:differ-cli:0.1.0-SNAPSHOT`。
+2. 从 `mavenLocal()` 解析 `io.github.artern:differ-cli:0.1.0`。
 3. 在 `verify` 阶段生成可执行补丁器。
 4. 成功后刷新本地 baseline 缓存。
 
 示例：
 
 ```bash
-cd /Users/anran/Documents/workspace-java/nice-admin-projects/mdm
-/Users/anran/opt/apache-maven-3.9.11/bin/mvn verify -Pspring-boot-fat-jar-differ
+mvn verify -Pspring-boot-fat-jar-differ
 ```
 
 ## Demo
@@ -168,5 +167,3 @@ cd /Users/anran/Documents/workspace-java/nice-admin-projects/mdm
 ./gradlew -p demo-spring-boot bootJar
 ./gradlew -p demo-spring-boot bootDiff
 ```
-
-该 demo 通过 `mavenLocal()` 解析插件，与 `nice-admin-projects` 中的真实接入路径保持一致。

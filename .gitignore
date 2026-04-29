@@ -10,15 +10,17 @@ build/
 *.log
 out/
 bin/
+hs_err_pid*
+replay_pid*
 
-# IDEs
+# IDE
 .idea/
 *.iml
 .vscode/
-.classpath
-.project
-.settings/
-.factorypath
-.apt_generated/
-.springBeans
-.sts4-cache/
+
+# Local artifacts
+patcher-*.jar
+
+# Local secrets
+private.asc
+private.asc.env

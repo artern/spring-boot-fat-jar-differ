@@ -3,19 +3,6 @@
 *.cmd text eol=crlf
 
 *.jar binary
+*.war binary
 *.zip binary
 *.gz binary
-*.png binary
-*.jpg binary
-*.jpeg binary
-*.gif binary
-*.ico binary
-*.pdf binary
-*.wav binary
-*.mp3 binary
-*.mp4 binary
-*.so binary
-*.dll binary
-*.dylib binary
-*.ttf binary
-*.otf binary
