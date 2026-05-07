@@ -10,7 +10,12 @@ import java.util.zip.ZipEntry;
 /** Renders a human-readable per-entry diff so operators can audit generated patches. */
 public final class JarDiffReportFormatter {
 
-  /** Expands the structural plan into concrete entry-level log lines. */
+  /**
+   * Expands the structural plan into concrete entry-level log lines.
+   *
+   * @param plan diff plan to render
+   * @return ordered human-readable log lines
+   */
   public List<String> format(JarDiffPlan plan) {
     List<String> lines = new ArrayList<String>();
     appendPreambleLine(plan, lines);

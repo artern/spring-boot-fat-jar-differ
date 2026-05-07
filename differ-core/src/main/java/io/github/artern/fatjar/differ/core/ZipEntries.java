@@ -19,6 +19,10 @@ public final class ZipEntries {
   /**
    * Copies the source entry name-independent metadata onto a new output entry so the rebuilt
    * archive preserves Spring Boot packaging constraints such as STORED nested jars.
+   *
+   * @param sourceEntry source zip entry
+   * @param targetName target entry path
+   * @return copied entry with preserved metadata
    */
   public static ZipEntry copyMetadata(ZipEntry sourceEntry, String targetName) {
     ZipEntry outputEntry =

@@ -39,15 +39,22 @@ public final class SpringBootFatJarDifferPlugin implements Plugin<Project> {
         ignored ->
             taskProvider.configure(
                 task -> {
-                  // Follow Spring Boot's conventional archive-producing tasks first, then
-                  // fall back to the plain jar task when used outside Spring Boot.
-                  if (project.getTasks().findByName("bootJar") != null) {
-                    task.dependsOn("bootJar");
-                  } else if (project.getTasks().findByName("bootWar") != null) {
+                  // Prefer WAR-producing tasks first so executable WAR overlays can
+                  // patch the same artifact that is built and deployed.
+                  if (isEnabledTask(project, "bootWar")) {
                     task.dependsOn("bootWar");
-                  } else if (project.getTasks().findByName("jar") != null) {
+                  } else if (isEnabledTask(project, "bootJar")) {
+                    task.dependsOn("bootJar");
+                  } else if (isEnabledTask(project, "war")) {
+                    task.dependsOn("war");
+                  } else if (isEnabledTask(project, "jar")) {
                     task.dependsOn("jar");
                   }
                 }));
+  }
+
+  private boolean isEnabledTask(Project project, String taskName) {
+    return project.getTasks().findByName(taskName) != null
+        && project.getTasks().getByName(taskName).getEnabled();
   }
 }

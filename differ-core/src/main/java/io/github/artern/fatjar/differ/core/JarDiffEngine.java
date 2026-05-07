@@ -16,7 +16,15 @@ public final class JarDiffEngine {
 
   private final SpringBootFatJarScanner scanner = new SpringBootFatJarScanner();
 
-  /** Builds a diff plan from the previous release archive to the new target archive. */
+  /**
+   * Builds a diff plan from the previous release archive to the new target archive.
+   *
+   * @param baselineJar baseline archive path
+   * @param targetJar target archive path
+   * @param toolVersion differ tool version to persist in metadata
+   * @return fully computed diff plan
+   * @throws IOException when either archive cannot be scanned
+   */
   public JarDiffPlan createPlan(Path baselineJar, Path targetJar, String toolVersion)
       throws IOException {
     JarSnapshot baselineSnapshot = scanner.scan(baselineJar);
@@ -93,7 +101,12 @@ public final class JarDiffEngine {
     return Long.toUnsignedString(crcSum, 16);
   }
 
-  /** Returns a compact human-readable summary for CLI and build logs. */
+  /**
+   * Returns a compact human-readable summary for CLI and build logs.
+   *
+   * @param plan diff plan to summarize
+   * @return compact summary string
+   */
   public String summarize(JarDiffPlan plan) {
     int replaceTrees = 0;
     int adds = 0;

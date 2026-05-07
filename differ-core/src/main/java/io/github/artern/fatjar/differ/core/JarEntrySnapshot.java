@@ -50,7 +50,12 @@ public final class JarEntrySnapshot {
     return method;
   }
 
-  /** Compares the entry shape and content metadata used by the differ. */
+  /**
+   * Compares the entry shape and content metadata used by the differ.
+   *
+   * @param other candidate entry to compare
+   * @return true if path, payload metadata, and method all match
+   */
   public boolean sameContent(JarEntrySnapshot other) {
     return samePayloadContent(other) && method == other.method;
   }
@@ -58,6 +63,9 @@ public final class JarEntrySnapshot {
   /**
    * Compares extracted entry content identity while ignoring archive-level metadata such as the zip
    * compression method.
+   *
+   * @param other candidate entry to compare
+   * @return true if path, type, crc, and size match
    */
   public boolean samePayloadContent(JarEntrySnapshot other) {
     return other != null

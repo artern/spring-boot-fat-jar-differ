@@ -25,7 +25,13 @@ public final class PatchMetadataIO {
   public static final String BASELINE_ENTRIES_INDEX = PATCH_ROOT + "baseline-entries.tsv";
   public static final String TARGET_ENTRIES_INDEX = PATCH_ROOT + "target-entries.tsv";
 
-  /** Writes all manifest files under {@value #PATCH_ROOT}. */
+  /**
+   * Writes all manifest files under {@value #PATCH_ROOT}.
+   *
+   * @param zipOutputStream output archive stream
+   * @param patchManifest patch manifest to serialize
+   * @throws IOException when writing metadata entries fails
+   */
   public void write(ZipOutputStream zipOutputStream, PatchManifest patchManifest)
       throws IOException {
     ZipEntries.writeDirectory(zipOutputStream, PATCH_ROOT);
@@ -40,7 +46,13 @@ public final class PatchMetadataIO {
         zipOutputStream, TARGET_ENTRIES_INDEX, encodeEntries(patchManifest.getTargetEntries()));
   }
 
-  /** Reads the serialized manifest back from an executable patcher jar. */
+  /**
+   * Reads the serialized manifest back from an executable patcher jar.
+   *
+   * @param zipFile patcher archive file
+   * @return deserialized patch manifest
+   * @throws IOException when required metadata entries are missing or malformed
+   */
   public PatchManifest read(ZipFile zipFile) throws IOException {
     PatchManifest patchManifest = new PatchManifest();
     Map<String, String> properties = readProperties(readUtf8(zipFile, PATCH_PROPERTIES));

@@ -10,6 +10,10 @@ public final class PatchEntryMutability {
   /**
    * Returns whether the patch will replace, delete, or otherwise take ownership of the given entry
    * path when rebuilding the target archive.
+   *
+   * @param entryPath current archive entry path
+   * @param operations patch operations list
+   * @return true if the entry is mutated by the patch
    */
   public static boolean isMutable(String entryPath, List<PatchOperation> operations) {
     for (PatchOperation operation : operations) {

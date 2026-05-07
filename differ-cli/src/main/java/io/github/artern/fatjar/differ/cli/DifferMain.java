@@ -18,7 +18,12 @@ public final class DifferMain {
 
   private DifferMain() {}
 
-  /** Usage: {@code spring-boot-fat-jar-differ.jar <baseline> <latest> [output]}. */
+  /**
+   * Usage: {@code spring-boot-fat-jar-differ.jar <baseline> <latest> [output]}.
+   *
+   * @param args command-line arguments
+   * @throws Exception when input validation fails or patch generation cannot complete
+   */
   public static void main(String[] args) throws Exception {
     if (args.length < 2 || args.length > 4) {
       printUsageAndExit();

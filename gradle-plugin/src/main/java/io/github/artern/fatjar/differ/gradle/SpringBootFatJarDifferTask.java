@@ -32,7 +32,11 @@ public abstract class SpringBootFatJarDifferTask extends DefaultTask {
     this.extension = extension;
   }
 
-  /** Generates the patcher jar and refreshes the cached baseline after a successful build. */
+  /**
+   * Generates the patcher jar and refreshes the cached baseline after a successful build.
+   *
+   * @throws IOException when patch generation or baseline update fails
+   */
   @TaskAction
   public void generate() throws IOException {
     Path latestJar = resolveLatestJar();
@@ -125,17 +129,12 @@ public abstract class SpringBootFatJarDifferTask extends DefaultTask {
   }
 
   private AbstractArchiveTask findArchiveTask() {
-    Task bootJarTask = getProject().getTasks().findByName("bootJar");
-    if (bootJarTask instanceof AbstractArchiveTask) {
-      return (AbstractArchiveTask) bootJarTask;
-    }
-    Task bootWarTask = getProject().getTasks().findByName("bootWar");
-    if (bootWarTask instanceof AbstractArchiveTask) {
-      return (AbstractArchiveTask) bootWarTask;
-    }
-    Task jarTask = getProject().getTasks().findByName("jar");
-    if (jarTask instanceof AbstractArchiveTask) {
-      return (AbstractArchiveTask) jarTask;
+    String[] preferredTaskNames = new String[] {"bootWar", "bootJar", "war", "jar"};
+    for (String taskName : preferredTaskNames) {
+      Task task = getProject().getTasks().findByName(taskName);
+      if (task instanceof AbstractArchiveTask && task.getEnabled()) {
+        return (AbstractArchiveTask) task;
+      }
     }
     return null;
   }

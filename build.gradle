@@ -4,8 +4,8 @@ plugins {
     id 'io.github.gradle-nexus.publish-plugin' version '2.0.0'
 }
 
-group = 'io.github.artern'
-version = '0.1.0'
+group = 'io.github.artern.spring-boot-fat-jar-differ'
+version = '0.1.2'
 
 ext {
     javaVersion = JavaVersion.VERSION_1_8

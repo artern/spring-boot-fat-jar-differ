@@ -48,7 +48,11 @@ public final class PatchOperation {
     this.directory = directory;
   }
 
-  /** Returns whether the patch bundle must carry replacement bytes for this operation. */
+  /**
+   * Returns whether the patch bundle must carry replacement bytes for this operation.
+   *
+   * @return true when payload bytes are required
+   */
   public boolean requiresPayload() {
     return type == Type.REPLACE_TREE || type == Type.ADD_ENTRY || type == Type.REPLACE_ENTRY;
   }

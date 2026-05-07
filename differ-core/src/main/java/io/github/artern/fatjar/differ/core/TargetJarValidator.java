@@ -19,6 +19,10 @@ public final class TargetJarValidator {
   /**
    * Verifies that the currently installed archive still matches the immutable part of the baseline
    * and does not contain extra immutable entries that the patch would leave behind.
+   *
+   * @param currentJar currently installed archive
+   * @param patchManifest manifest containing baseline expectations
+   * @throws IOException when archive scanning fails
    */
   public void validateBaseline(Path currentJar, PatchManifest patchManifest) throws IOException {
     JarSnapshot snapshot = scanner.scan(currentJar);
@@ -32,7 +36,14 @@ public final class TargetJarValidator {
         "Current jar");
   }
 
-  /** Verifies preamble bytes and entry metadata after patch application. */
+  /**
+   * Verifies preamble bytes and entry metadata after patch application.
+   *
+   * @param outputJar patched archive path
+   * @param patchManifest manifest containing target expectations
+   * @param expectedPreamble expected preamble bytes from payload
+   * @throws IOException when archive scanning fails
+   */
   public void validateTarget(Path outputJar, PatchManifest patchManifest, byte[] expectedPreamble)
       throws IOException {
     JarSnapshot snapshot = scanner.scan(outputJar);

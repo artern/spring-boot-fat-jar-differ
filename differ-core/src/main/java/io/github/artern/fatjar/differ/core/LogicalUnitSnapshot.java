@@ -36,6 +36,9 @@ public final class LogicalUnitSnapshot {
   /**
    * Compares two logical units entry-by-entry and stops at the first difference because any single
    * mismatch already means the whole logical tree must be replaced.
+   *
+   * @param other logical unit to compare
+   * @return true when both units are structurally equivalent
    */
   public boolean structurallyEquals(LogicalUnitSnapshot other) {
     if (other == null

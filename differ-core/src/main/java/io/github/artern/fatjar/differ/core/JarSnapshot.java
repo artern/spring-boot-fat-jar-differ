@@ -58,6 +58,9 @@ public final class JarSnapshot {
   /**
    * Returns an empty snapshot for missing logical areas so callers can compare archives without
    * null checks.
+   *
+   * @param logicalArea logical area key
+   * @return existing or empty logical unit snapshot
    */
   public LogicalUnitSnapshot getLogicalUnit(LogicalArea logicalArea) {
     LogicalUnitSnapshot snapshot = logicalUnits.get(logicalArea);

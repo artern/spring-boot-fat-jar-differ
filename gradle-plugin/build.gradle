@@ -66,6 +66,9 @@ gradlePlugin {
 
 publishing {
     publications.withType(MavenPublication).configureEach { publication ->
+        if (publication.name == 'pluginMaven') {
+            publication.artifactId = 'differ-gradle-plugin'
+        }
         pom {
             configurePomMetadata(delegate, publication.name)
         }

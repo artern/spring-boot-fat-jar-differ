@@ -32,6 +32,8 @@ public final class JarDiffPlan {
 
   /**
    * Exposes a defensive copy so callers can inspect operations without mutating the manifest state.
+   *
+   * @return immutable operation list view
    */
   public List<PatchOperation> getOperations() {
     return Collections.unmodifiableList(

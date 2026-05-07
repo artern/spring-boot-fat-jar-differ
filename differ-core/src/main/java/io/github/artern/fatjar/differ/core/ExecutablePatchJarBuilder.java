@@ -24,6 +24,14 @@ public final class ExecutablePatchJarBuilder {
   /**
    * Creates an executable patch bundle that can upgrade {@code baselineJar} to {@code targetJar} in
    * place.
+   *
+   * @param baselineJar baseline archive path
+   * @param targetJar target archive path
+   * @param templateJarInputStream embedded runtime template stream
+   * @param outputPatchJar output patcher archive path
+   * @param toolVersion differ tool version to persist in metadata
+   * @return computed diff plan used to build the patch
+   * @throws IOException when archive scanning or output writing fails
    */
   public JarDiffPlan build(
       Path baselineJar,

@@ -19,6 +19,10 @@ public final class SpringBootFatJarScanner {
   /**
    * Reads archive entries, captures any launch script preamble, and groups the logical areas that
    * are replaced as whole trees.
+   *
+   * @param jarPath executable Spring Boot archive path
+   * @return scanned snapshot
+   * @throws IOException when archive reading fails
    */
   public JarSnapshot scan(Path jarPath) throws IOException {
     ArchivePreamble archivePreamble = ArchivePreambleSupport.read(jarPath);

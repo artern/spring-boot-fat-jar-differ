@@ -52,6 +52,24 @@ class SpringBootFatJarDifferPluginTest {
     assertArrayEquals(Files.readAllBytes(latest), Files.readAllBytes(baseline));
   }
 
+  @Test
+  void defaultsToBootWarWhenBothBootWarAndBootJarExist() throws Exception {
+    Path projectDir = prepareAutoArchiveProject();
+
+    BuildResult result = runner(projectDir).build();
+    assertEquals(SUCCESS, result.task(":bootDiff").getOutcome());
+
+    Path latestWar = projectDir.resolve("build/libs/cas.war");
+    Path baseline =
+        projectDir.resolve(
+            ".gradle/spring-boot-fat-jar-differ/sample-app-auto/baseline/last-release.war");
+    Path patcher = projectDir.resolve("build/fat-jar-differ/patcher-cas.jar");
+
+    assertTrue(Files.exists(latestWar));
+    assertTrue(Files.exists(patcher));
+    assertArrayEquals(Files.readAllBytes(latestWar), Files.readAllBytes(baseline));
+  }
+
   private Path prepareProject(boolean withBaseline) throws Exception {
     Path projectDir = tempDir.resolve(withBaseline ? "with-baseline" : "without-baseline");
     Files.createDirectories(projectDir);
@@ -86,6 +104,54 @@ class SpringBootFatJarDifferPluginTest {
         .withProjectDir(projectDir.toFile())
         .withPluginClasspath()
         .withArguments("bootDiff");
+  }
+
+  private Path prepareAutoArchiveProject() throws Exception {
+    Path projectDir = tempDir.resolve("auto-archive-selection");
+    Files.createDirectories(projectDir);
+    Files.write(
+        projectDir.resolve("settings.gradle"),
+        "rootProject.name = 'sample-app-auto'\n".getBytes(StandardCharsets.UTF_8));
+    Files.write(
+        projectDir.resolve("build.gradle"),
+        ("plugins {\n"
+                + "    id 'base'\n"
+                + "    id 'io.github.artern.spring-boot-fat-jar-differ'\n"
+                + "}\n"
+                + "version = '1.0.0'\n"
+                + "\n"
+                + "tasks.register('bootWar', Jar) {\n"
+                + "    destinationDirectory = layout.buildDirectory.dir('libs')\n"
+                + "    archiveFileName = 'cas.war'\n"
+                + "    archiveExtension = 'war'\n"
+                + "    from(layout.projectDirectory.dir('fixtures/latest-war'))\n"
+                + "}\n"
+                + "\n"
+                + "tasks.register('bootJar', Jar) {\n"
+                + "    destinationDirectory = layout.buildDirectory.dir('libs')\n"
+                + "    archiveFileName = 'sample-app-auto.jar'\n"
+                + "    from(layout.projectDirectory.dir('fixtures/latest-jar'))\n"
+                + "}\n")
+            .getBytes(StandardCharsets.UTF_8));
+
+    Files.createDirectories(projectDir.resolve("fixtures/latest-war/WEB-INF/classes"));
+    Files.createDirectories(projectDir.resolve("fixtures/latest-jar/BOOT-INF/classes"));
+    Files.write(
+        projectDir.resolve("fixtures/latest-war/WEB-INF/classes/app.txt"),
+        "new-war".getBytes(StandardCharsets.UTF_8));
+    Files.write(
+        projectDir.resolve("fixtures/latest-jar/BOOT-INF/classes/app.txt"),
+        "new-jar".getBytes(StandardCharsets.UTF_8));
+
+    Path baselineDir =
+        projectDir.resolve(".gradle/spring-boot-fat-jar-differ/sample-app-auto/baseline");
+    Files.createDirectories(baselineDir);
+    Map<String, String> entries = new LinkedHashMap<String, String>();
+    entries.put("WEB-INF/", null);
+    entries.put("WEB-INF/classes/", null);
+    entries.put("WEB-INF/classes/app.txt", "old-war");
+    writeJar(baselineDir.resolve("last-release.war"), entries);
+    return projectDir;
   }
 
   private Map<String, String> baselineEntries() {
