@@ -70,7 +70,7 @@ class PatchApplierTest {
     }
     assertStored(outputJar, "BOOT-INF/lib/dependency.jar");
     assertContains(progressMessages, "Baseline validation passed.");
-    assertContains(progressMessages, "[REPLACE_ENTRY] BOOT-INF/lib/dependency.jar (method=STORED)");
+    assertContains(progressMessages, "Applied payload entries: 7");
     assertSnapshotEntriesMatch(expected, actual);
     assertArrayEquals(
         expected.getArchivePreamble().getBytes(), actual.getArchivePreamble().getBytes());
@@ -105,6 +105,8 @@ class PatchApplierTest {
         expected.getArchivePreamble().getBytes(), actual.getArchivePreamble().getBytes());
     assertCentralDirectoryOffsetAligned(targetWar);
     assertCentralDirectoryOffsetAligned(outputWar);
+    assertEntryOrderBefore(
+        outputWar, "WEB-INF/classes/application.yml", "WEB-INF/lib/dependency.jar");
     assertEquals(baselineWar.toFile().canExecute(), outputWar.toFile().canExecute());
   }
 
@@ -144,6 +146,34 @@ class PatchApplierTest {
     assertEquals(
         expected.getAllEntries().get("BOOT-INF/classes/com/").getMethod(),
         actual.getAllEntries().get("BOOT-INF/classes/com/").getMethod());
+  }
+
+  @Test
+  void appliesPatchBundleWithAddedEmptyDirectoryEntry() throws Exception {
+    Path baselineJar = tempDir.resolve("baseline-empty-dir.jar");
+    Path targetJar = tempDir.resolve("target-empty-dir.jar");
+    Path templateJar = tempDir.resolve("template.jar");
+    Path patchBundle = tempDir.resolve("spring-boot-fat-jar-patcher.jar");
+    Path outputJar = tempDir.resolve("output-empty-dir.jar");
+
+    writeJar(baselineJar, baselineEntries());
+    Map<String, String> entries = new LinkedHashMap<String, String>(targetEntries());
+    entries.put("BOOT-INF/classes/feature/", null);
+    writeJar(targetJar, entries);
+    writeTemplateJar(templateJar);
+
+    ExecutablePatchJarBuilder builder = new ExecutablePatchJarBuilder();
+    try (InputStream templateStream = Files.newInputStream(templateJar)) {
+      builder.build(baselineJar, targetJar, templateStream, patchBundle, "test-version");
+    }
+
+    new PatchApplier().apply(baselineJar, patchBundle, outputJar);
+
+    SpringBootFatJarScanner scanner = new SpringBootFatJarScanner();
+    JarSnapshot actual = scanner.scan(outputJar);
+    JarSnapshot expected = scanner.scan(targetJar);
+    assertSnapshotEntriesMatch(expected, actual);
+    assertTrue(actual.getAllEntries().containsKey("BOOT-INF/classes/feature/"));
   }
 
   @Test
@@ -332,6 +362,15 @@ class PatchApplierTest {
     entries.put("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nMain-Class: sample.War\n");
     entries.put("WEB-INF/", null);
     entries.put("WEB-INF/classes/", null);
+    entries.put(
+        "WEB-INF/classes/application.yml",
+        "mdm:\n"
+            + "  auth:\n"
+            + "    api: https://example.test/api/"
+            + marker
+            + "\n"
+            + "server:\n"
+            + "  port: 8661\n");
     entries.put("WEB-INF/classes/sample/App.class", marker + "-war-app");
     entries.put("WEB-INF/lib/dependency.jar", "dep");
     entries.put("application.properties", "mode=" + marker + "\n");
@@ -411,6 +450,24 @@ class PatchApplierTest {
     long centralDirectoryOffset = readUnsignedInt(bytes, endOfCentralDirectoryOffset + 16);
     long actualCentralDirectoryOffset = endOfCentralDirectoryOffset - centralDirectorySize;
     assertEquals(actualCentralDirectoryOffset, centralDirectoryOffset);
+  }
+
+  private void assertEntryOrderBefore(Path archive, String firstEntry, String secondEntry)
+      throws IOException {
+    try (ZipFile zipFile = new ZipFile(archive.toFile())) {
+      List<String> names = new ArrayList<String>();
+      Enumeration<? extends ZipEntry> entries = zipFile.entries();
+      while (entries.hasMoreElements()) {
+        names.add(entries.nextElement().getName());
+      }
+      int firstIndex = names.indexOf(firstEntry);
+      int secondIndex = names.indexOf(secondEntry);
+      assertTrue(firstIndex >= 0, firstEntry + " should exist");
+      assertTrue(secondIndex >= 0, secondEntry + " should exist");
+      assertTrue(
+          firstIndex < secondIndex,
+          firstEntry + " should come before " + secondEntry + " in archive order");
+    }
   }
 
   private int lastIndexOf(byte[] source, byte[] pattern) {

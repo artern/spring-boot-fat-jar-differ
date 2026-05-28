@@ -6,17 +6,17 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Enumeration;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-import io.github.artern.fatjar.differ.core.PatchEntryMutability;
+import io.github.artern.fatjar.differ.core.JarEntrySnapshot;
 import io.github.artern.fatjar.differ.core.PatchManifest;
 import io.github.artern.fatjar.differ.core.PatchMetadataIO;
-import io.github.artern.fatjar.differ.core.PatchOperation;
 import io.github.artern.fatjar.differ.core.TargetJarValidator;
 import io.github.artern.fatjar.differ.core.ZipEntries;
 
@@ -74,12 +74,11 @@ public final class PatchApplier {
         try (ZipFile currentZip = new ZipFile(currentJar.toFile());
             OutputStream payloadStream = Files.newOutputStream(zipPayload);
             ZipOutputStream outputZip = new ZipOutputStream(payloadStream)) {
-          Set<String> writtenEntries = new LinkedHashSet<String>();
-          int unchangedEntries =
-              copyUnchangedEntries(currentZip, patchManifest, outputZip, writtenEntries);
+          WriteResult result =
+              writeEntriesInTargetOrder(currentZip, patchZip, patchManifest, outputZip);
+          int unchangedEntries = result.getCopiedFromCurrent();
           log("Copied unchanged entries: " + unchangedEntries);
-          int appliedEntries =
-              copyPayloadEntries(patchZip, patchManifest, outputZip, writtenEntries);
+          int appliedEntries = result.getCopiedFromPayload();
           log("Applied payload entries: " + appliedEntries);
         }
         log("Restoring archive preamble: " + preamble.length + " byte(s)");
@@ -118,117 +117,48 @@ public final class PatchApplier {
     return outputStream.toByteArray();
   }
 
-  private int copyUnchangedEntries(
-      ZipFile currentZip,
-      PatchManifest patchManifest,
-      ZipOutputStream outputZip,
-      Set<String> writtenEntries)
+  private WriteResult writeEntriesInTargetOrder(
+      ZipFile currentZip, ZipFile patchZip, PatchManifest patchManifest, ZipOutputStream outputZip)
       throws IOException {
-    int copied = 0;
-    Enumeration<? extends ZipEntry> entries = currentZip.entries();
-    while (entries.hasMoreElements()) {
-      ZipEntry zipEntry = entries.nextElement();
-      if (PatchEntryMutability.isMutable(zipEntry.getName(), patchManifest.getOperations())) {
+    Set<String> writtenEntries = new LinkedHashSet<String>();
+    Map<String, ZipEntry> payloadEntries = payloadEntriesByTargetPath(patchZip);
+    int copiedFromCurrent = 0;
+    int copiedFromPayload = 0;
+    for (JarEntrySnapshot targetEntry : patchManifest.getTargetEntries()) {
+      String targetPath = targetEntry.getPath();
+      if (!writtenEntries.add(targetPath)) {
         continue;
       }
-      if (writtenEntries.add(zipEntry.getName())) {
-        copyEntry(currentZip, zipEntry, outputZip, zipEntry.getName());
-        copied++;
-      }
-    }
-    return copied;
-  }
-
-  private int copyPayloadEntries(
-      ZipFile patchZip,
-      PatchManifest patchManifest,
-      ZipOutputStream outputZip,
-      Set<String> writtenEntries)
-      throws IOException {
-    int applied = 0;
-    for (PatchOperation operation : patchManifest.getOperations()) {
-      if (!operation.requiresPayload()) {
-        log("[" + operation.getType().name() + "] " + operation.getTargetPath());
+      ZipEntry payloadEntry = payloadEntries.get(targetPath);
+      if (payloadEntry != null) {
+        copyEntry(patchZip, payloadEntry, outputZip, targetPath);
+        copiedFromPayload++;
         continue;
       }
-      // Tree replacements replay every nested entry from the payload; file
-      // operations only need their direct payload entry.
-      if (operation.getType() == PatchOperation.Type.REPLACE_TREE) {
-        log("[REPLACE_TREE] " + operation.getTargetPath());
-        applied += copyPayloadTree(patchZip, operation.getTargetPath(), outputZip, writtenEntries);
-      } else {
-        applied += copyPayloadEntry(patchZip, operation, outputZip, writtenEntries);
+      ZipEntry currentEntry = currentZip.getEntry(targetPath);
+      if (currentEntry == null) {
+        throw new IOException("Missing entry while rebuilding target archive: " + targetPath);
       }
+      copyEntry(currentZip, currentEntry, outputZip, targetPath);
+      copiedFromCurrent++;
     }
-    return applied;
+    return new WriteResult(copiedFromCurrent, copiedFromPayload);
   }
 
-  private int copyPayloadTree(
-      ZipFile patchZip, String targetPrefix, ZipOutputStream outputZip, Set<String> writtenEntries)
-      throws IOException {
-    String payloadPrefix = PatchMetadataIO.PAYLOAD_ROOT + targetPrefix;
-    int applied = 0;
-    Set<String> names = new TreeSet<String>();
+  private Map<String, ZipEntry> payloadEntriesByTargetPath(ZipFile patchZip) {
+    Map<String, ZipEntry> payloadEntries = new LinkedHashMap<String, ZipEntry>();
     Enumeration<? extends ZipEntry> entries = patchZip.entries();
     while (entries.hasMoreElements()) {
-      names.add(entries.nextElement().getName());
-    }
-    for (String name : names) {
-      if (!name.startsWith(payloadPrefix)) {
+      ZipEntry entry = entries.nextElement();
+      String name = entry.getName();
+      if (!name.startsWith(PatchMetadataIO.PAYLOAD_ROOT)
+          || PatchMetadataIO.PREAMBLE_PAYLOAD.equals(name)) {
         continue;
       }
       String targetName = name.substring(PatchMetadataIO.PAYLOAD_ROOT.length());
-      if (writtenEntries.add(targetName)) {
-        ZipEntry payloadEntry = patchZip.getEntry(name);
-        copyEntry(patchZip, payloadEntry, outputZip, targetName);
-        log(
-            "  [WRITE] "
-                + targetName
-                + " (method="
-                + compressionMethod(payloadEntry.getMethod())
-                + ")");
-        applied++;
-      }
+      payloadEntries.put(targetName, entry);
     }
-    return applied;
-  }
-
-  private int copyPayloadEntry(
-      ZipFile patchZip,
-      PatchOperation operation,
-      ZipOutputStream outputZip,
-      Set<String> writtenEntries)
-      throws IOException {
-    String payloadName = PatchMetadataIO.PAYLOAD_ROOT + operation.getTargetPath();
-    if (!writtenEntries.add(operation.getTargetPath())) {
-      return 0;
-    }
-    ZipEntry payloadEntry = patchZip.getEntry(payloadName);
-    if (payloadEntry == null) {
-      if (operation.isDirectory()) {
-        java.util.zip.ZipEntry zipEntry =
-            new java.util.zip.ZipEntry(normalizeDirectory(operation.getTargetPath()));
-        outputZip.putNextEntry(zipEntry);
-        outputZip.closeEntry();
-        log("[" + operation.getType().name() + "] " + operation.getTargetPath() + " (directory)");
-        return 1;
-      }
-      throw new IOException("Missing payload entry in patch bundle: " + payloadName);
-    }
-    copyEntry(patchZip, payloadEntry, outputZip, operation.getTargetPath());
-    log(
-        "["
-            + operation.getType().name()
-            + "] "
-            + operation.getTargetPath()
-            + " (method="
-            + compressionMethod(payloadEntry.getMethod())
-            + ")");
-    return 1;
-  }
-
-  private String normalizeDirectory(String targetPath) {
-    return targetPath.endsWith("/") ? targetPath : targetPath + "/";
+    return payloadEntries;
   }
 
   private void copyEntry(
@@ -269,5 +199,23 @@ public final class PatchApplier {
       return "UNKNOWN";
     }
     return Integer.toString(method);
+  }
+
+  private static final class WriteResult {
+    private final int copiedFromCurrent;
+    private final int copiedFromPayload;
+
+    private WriteResult(int copiedFromCurrent, int copiedFromPayload) {
+      this.copiedFromCurrent = copiedFromCurrent;
+      this.copiedFromPayload = copiedFromPayload;
+    }
+
+    private int getCopiedFromCurrent() {
+      return copiedFromCurrent;
+    }
+
+    private int getCopiedFromPayload() {
+      return copiedFromPayload;
+    }
   }
 }
