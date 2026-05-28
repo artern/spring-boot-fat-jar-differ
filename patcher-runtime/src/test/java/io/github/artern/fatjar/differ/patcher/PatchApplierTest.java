@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -94,6 +93,8 @@ class PatchApplierTest {
       builder.build(baselineWar, targetWar, templateStream, patchBundle, "test-version");
     }
 
+    baselineWar.toFile().setExecutable(true, false);
+
     new PatchApplier().apply(baselineWar, patchBundle, outputWar);
 
     SpringBootFatJarScanner scanner = new SpringBootFatJarScanner();
@@ -102,6 +103,9 @@ class PatchApplierTest {
     assertSnapshotEntriesMatch(expected, actual);
     assertArrayEquals(
         expected.getArchivePreamble().getBytes(), actual.getArchivePreamble().getBytes());
+    assertCentralDirectoryOffsetAligned(targetWar);
+    assertCentralDirectoryOffsetAligned(outputWar);
+    assertEquals(baselineWar.toFile().canExecute(), outputWar.toFile().canExecute());
   }
 
   @Test
@@ -353,41 +357,83 @@ class PatchApplierTest {
       long entryTime,
       boolean reverseOrder)
       throws IOException {
-    if (preamble != null) {
-      Files.write(jarFile, preamble.getBytes(StandardCharsets.UTF_8));
-    }
+    Path zipTarget =
+        preamble == null
+            ? jarFile
+            : Files.createTempFile(tempDir, jarFile.getFileName().toString() + ".", ".zip");
     List<Map.Entry<String, String>> orderedEntries =
         new ArrayList<Map.Entry<String, String>>(entries.entrySet());
     if (reverseOrder) {
       Collections.reverse(orderedEntries);
     }
-    try (ZipOutputStream outputStream =
-        new ZipOutputStream(
-            Files.newOutputStream(jarFile, StandardOpenOption.CREATE, StandardOpenOption.APPEND))) {
-      for (Map.Entry<String, String> entry : orderedEntries) {
-        byte[] bytes =
-            entry.getValue() == null
-                ? new byte[0]
-                : entry.getValue().getBytes(StandardCharsets.UTF_8);
-        ZipEntry zipEntry = new ZipEntry(entry.getKey());
-        if (entryTime >= 0) {
-          zipEntry.setTime(entryTime++);
+    try {
+      try (ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(zipTarget))) {
+        for (Map.Entry<String, String> entry : orderedEntries) {
+          byte[] bytes =
+              entry.getValue() == null
+                  ? new byte[0]
+                  : entry.getValue().getBytes(StandardCharsets.UTF_8);
+          ZipEntry zipEntry = new ZipEntry(entry.getKey());
+          if (entryTime >= 0) {
+            zipEntry.setTime(entryTime++);
+          }
+          if (storedEntries.contains(entry.getKey())) {
+            CRC32 crc32 = new CRC32();
+            crc32.update(bytes);
+            zipEntry.setMethod(ZipEntry.STORED);
+            zipEntry.setSize(bytes.length);
+            zipEntry.setCompressedSize(bytes.length);
+            zipEntry.setCrc(crc32.getValue());
+          }
+          outputStream.putNextEntry(zipEntry);
+          if (bytes.length > 0) {
+            outputStream.write(bytes);
+          }
+          outputStream.closeEntry();
         }
-        if (storedEntries.contains(entry.getKey())) {
-          CRC32 crc32 = new CRC32();
-          crc32.update(bytes);
-          zipEntry.setMethod(ZipEntry.STORED);
-          zipEntry.setSize(bytes.length);
-          zipEntry.setCompressedSize(bytes.length);
-          zipEntry.setCrc(crc32.getValue());
-        }
-        outputStream.putNextEntry(zipEntry);
-        if (bytes.length > 0) {
-          outputStream.write(bytes);
-        }
-        outputStream.closeEntry();
+      }
+      if (preamble != null) {
+        ExecutableArchiveSupport.writeArchive(
+            zipTarget, jarFile, preamble.getBytes(StandardCharsets.UTF_8));
+      }
+    } finally {
+      if (preamble != null) {
+        Files.deleteIfExists(zipTarget);
       }
     }
+  }
+
+  private void assertCentralDirectoryOffsetAligned(Path archive) throws IOException {
+    byte[] bytes = Files.readAllBytes(archive);
+    int endOfCentralDirectoryOffset = lastIndexOf(bytes, new byte[] {'P', 'K', 0x05, 0x06});
+    assertTrue(endOfCentralDirectoryOffset >= 0, "Missing end of central directory: " + archive);
+    long centralDirectorySize = readUnsignedInt(bytes, endOfCentralDirectoryOffset + 12);
+    long centralDirectoryOffset = readUnsignedInt(bytes, endOfCentralDirectoryOffset + 16);
+    long actualCentralDirectoryOffset = endOfCentralDirectoryOffset - centralDirectorySize;
+    assertEquals(actualCentralDirectoryOffset, centralDirectoryOffset);
+  }
+
+  private int lastIndexOf(byte[] source, byte[] pattern) {
+    for (int index = source.length - pattern.length; index >= 0; index--) {
+      boolean matches = true;
+      for (int offset = 0; offset < pattern.length; offset++) {
+        if (source[index + offset] != pattern[offset]) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  private long readUnsignedInt(byte[] source, int offset) {
+    return ((long) source[offset] & 0xffL)
+        | (((long) source[offset + 1] & 0xffL) << 8)
+        | (((long) source[offset + 2] & 0xffL) << 16)
+        | (((long) source[offset + 3] & 0xffL) << 24);
   }
 
   private void assertStored(Path jarFile, String entryName) throws IOException {

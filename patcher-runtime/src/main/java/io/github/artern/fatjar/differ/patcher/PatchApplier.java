@@ -67,20 +67,26 @@ public final class PatchApplier {
       log("Baseline validation passed.");
       Files.deleteIfExists(outputJar);
       byte[] preamble = readArchivePreamble(patchZip, patchManifest);
-      try (ZipFile currentZip = new ZipFile(currentJar.toFile());
-          OutputStream outputStream = Files.newOutputStream(outputJar)) {
-        // Launch scripts are not part of the zip payload, so they must be
-        // restored before the new zip content is streamed out.
+      Path zipPayload =
+          Files.createTempFile(
+              outputJar.getParent(), outputJar.getFileName().toString() + ".", ".zip");
+      try {
+        try (ZipFile currentZip = new ZipFile(currentJar.toFile());
+            OutputStream payloadStream = Files.newOutputStream(zipPayload);
+            ZipOutputStream outputZip = new ZipOutputStream(payloadStream)) {
+          Set<String> writtenEntries = new LinkedHashSet<String>();
+          int unchangedEntries =
+              copyUnchangedEntries(currentZip, patchManifest, outputZip, writtenEntries);
+          log("Copied unchanged entries: " + unchangedEntries);
+          int appliedEntries =
+              copyPayloadEntries(patchZip, patchManifest, outputZip, writtenEntries);
+          log("Applied payload entries: " + appliedEntries);
+        }
         log("Restoring archive preamble: " + preamble.length + " byte(s)");
-        outputStream.write(preamble);
-        ZipOutputStream outputZip = new ZipOutputStream(outputStream);
-        Set<String> writtenEntries = new LinkedHashSet<String>();
-        int unchangedEntries =
-            copyUnchangedEntries(currentZip, patchManifest, outputZip, writtenEntries);
-        log("Copied unchanged entries: " + unchangedEntries);
-        int appliedEntries = copyPayloadEntries(patchZip, patchManifest, outputZip, writtenEntries);
-        log("Applied payload entries: " + appliedEntries);
-        outputZip.close();
+        ExecutableArchiveSupport.writeArchive(zipPayload, outputJar, preamble);
+        ExecutableArchiveSupport.copyFilePermissions(currentJar, outputJar);
+      } finally {
+        Files.deleteIfExists(zipPayload);
       }
       log("Validating reconstructed archive against target metadata...");
       targetJarValidator.validateTarget(outputJar, patchManifest, preamble);

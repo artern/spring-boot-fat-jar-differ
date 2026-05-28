@@ -49,6 +49,7 @@ public final class PatcherMain {
                 + BACKUP_SUFFIX.format(LocalDateTime.now())
                 + ".bak");
     Files.copy(currentJar, backupFile, StandardCopyOption.REPLACE_EXISTING);
+    ExecutableArchiveSupport.copyFilePermissions(currentJar, backupFile);
 
     // Patch into a temporary sibling file first so a failed patch never leaves
     // the installed archive half-written.
